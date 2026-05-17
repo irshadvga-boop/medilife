@@ -28,34 +28,34 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    # 🛠️ THE POWERFUL DATE PATTERN (ഷോർട്ട് തീയതികളും, ഒട്ടിപ്പിടിച്ച തീയതികളും മിസ്സാവില്ല)
     date_pattern = r'(0?[1-9]|[12][0-9]|3[01])/(0?[1-9]|1[012])/(\d{4}|\d{2})|(0?[1-9]|1[012])/(\d{4}|\d{2})'
     
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
 
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
     raw_lines = stringio.readlines()
+    cleaned_lines = [line.rstrip('\r\n') for line in raw_lines if line.strip()]
 
-    # --- 🛠️ 100% BULLETPROOF MERGING LOGIC (രണ്ടാമത്തെ വരികൾ കൃത്യമായി പിടിച്ചെടുക്കുന്നു) ---
+    # --- 🛠️ 100% BULLETPROOF DUAL-MERGE LOGIC ---
     merged_lines = []
-    for line in raw_lines:
-        line_raw = line.rstrip('\r\n')
-        if not line_raw.strip():
-            continue
-            
-        is_continuation = False
-        if merged_lines:
-            if line_raw[0] in [' ', '\t']:
-                is_continuation = True
-            elif line_raw.startswith('\\'):
-                is_continuation = True
-            elif '\\' in merged_lines[-1] and not list(re.finditer(date_pattern, merged_lines[-1])):
-                is_continuation = True
+    i = 0
+    while i < len(cleaned_lines):
+        line = cleaned_lines[i]
+        
+        # 1. Type B Merge (ഉദാഹരണം: പേര് മാത്രം ഒരു വരിയിൽ, സ്ലാഷ് (\) അടുത്ത വരിയിൽ - TAMZER 0.4)
+        if '\\' not in line and "======" not in line and "----" not in line and "EXPIRED" not in line.upper() and "DATE" not in line.upper():
+            if i + 1 < len(cleaned_lines) and '\\' in cleaned_lines[i+1] and "Item Name" not in cleaned_lines[i+1]:
+                line = line.strip() + " " + cleaned_lines[i+1].strip()
+                i += 1  # അടുത്ത വരിയെ മെർജ് ചെയ്തതുകൊണ്ട് അത് ഒഴിവാക്കുന്നു
                 
-        if is_continuation:
-            merged_lines[-1] = merged_lines[-1].strip() + " " + line_raw.strip()
-        else:
-            merged_lines.append(line_raw)
+        # 2. Type A Merge (ഉദാഹരണം: സ്ലാഷ് ഉള്ള ഭാഗം ഒരു വരിയിൽ, തീയതി അടുത്ത വരിയിൽ)
+        if '\\' in line and not list(re.finditer(date_pattern, line)) and "Item Name" not in line:
+            if i + 1 < len(cleaned_lines):
+                line = line.strip() + " " + cleaned_lines[i+1].strip()
+                i += 1  
+
+        merged_lines.append(line)
+        i += 1
 
     for line_raw in merged_lines:
         line_stripped = line_raw.strip()
@@ -71,14 +71,14 @@ if uploaded_file is not None:
         if not start_parsing or not line_stripped:
             continue
             
-        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു
+        # സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു
         if '\\' not in line_stripped and '/' not in line_stripped and '-' not in line_stripped and not any(char.isdigit() for char in line_stripped[:12]):
             if "EXPIRED ITEMS" not in line_stripped.upper() and "ITEM NAME" not in line_stripped.upper() and "DATE :" not in line_stripped.upper():
                 current_supplier = line_stripped
                 continue
             
         try:
-            # 3. ബാക്ക് സ്ലാഷ് (\) വെച്ച് ഐറ്റം നെയിമും ബാക്കി ഭാഗവും തിരിക്കുന്നു
+            # സ്ലാഷ് (\) വെച്ച് ഐറ്റം നെയിമും ബാക്കി ഭാഗവും തിരിക്കുന്നു
             if '\\' in line_raw:
                 slash_pos = line_raw.find('\\')
                 before_slash = line_raw[:slash_pos].strip()
