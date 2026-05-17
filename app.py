@@ -14,21 +14,33 @@ uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
 if uploaded_file is not None:
     data_rows = []
-    current_supplier = "UNKNOWN SUPPLIER"  # സപ്ലയർ ഹെഡ്ഡർ ഇല്ലെങ്കിൽ തുടക്കത്തിൽ ഇത് നൽകും
+    current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
     # തീയതികൾ കണ്ടെത്താനുള്ള റീജക്സ് 
     date_pattern = r'\b\d{1,2}/\d{1,2}/\d{4}\b'
     
-    # കോമൺ ആയി ഒട്ടിനിൽക്കുന്ന പ്രധാന കമ്പനികളുടെ ലിസ്റ്റ്
-    known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS"]
+    # കോമൺ കമ്പനികളുടെ ലിസ്റ്റ്
+    known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
 
-    # Read the uploaded file lines safely
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
-    lines = stringio.readlines()
+    raw_lines = stringio.readlines()
 
-    for line in lines:
+    # --- 🛠️ 100% PERFECT FIX: രണ്ട് വരികളിലായി കിടക്കുന്ന ഐറ്റങ്ങളെ ഒന്നാക്കുന്നു ---
+    merged_lines = []
+    for line in raw_lines:
         line_raw = line.rstrip('\r\n')
+        if not line_raw.strip():
+            continue
+            
+        # വരി തുടങ്ങുന്നത് സ്പേസിലാണെങ്കിൽ, മുൻപത്തെ വരിയിൽ സ്ലാഷ് (\) ഉണ്ടായിട്ടും തീയതി ഇല്ലെങ്കിൽ അവയെ ഒന്നാക്കുന്നു!
+        if line_raw.startswith('  ') and merged_lines and '\\' in merged_lines[-1] and not re.search(date_pattern, merged_lines[-1]):
+            merged_lines[-1] = merged_lines[-1] + " " + line_raw.strip()
+        else:
+            merged_lines.append(line_raw)
+
+    # മെർജ് ചെയ്ത പുതിയ വരികൾ വെച്ച് ഡേറ്റാ വേർതിരിക്കുന്നു
+    for line_raw in merged_lines:
         line_stripped = line_raw.strip()
         
         # 1. റിപ്പോർട്ട് ഹെഡ്ഡറുകൾ ഒഴിവാക്കുന്നു
@@ -43,7 +55,7 @@ if uploaded_file is not None:
         if not start_parsing or not line_stripped:
             continue
             
-        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു (അനാവശ്യ ഹെഡ്ഡറുകൾ ഒഴിവാക്കുന്നു)
+        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു
         if '\\' not in line_stripped and '/' not in line_stripped and not any(char.isdigit() for char in line_stripped[:12]):
             if "EXPIRED ITEMS" not in line_stripped.upper() and "ITEM NAME" not in line_stripped.upper() and "DATE :" not in line_stripped.upper():
                 current_supplier = line_stripped
@@ -67,14 +79,13 @@ if uploaded_file is not None:
                 item_name = before_slash
                 packing = ""
                 
-            # --- 📆 EXPIRY DATE ആങ്കർ അടിസ്ഥാനമാക്കിയുള്ള പെർഫെക്റ്റ് ലോജിക് ---
+            # --- 📆 EXPIRY DATE അടിസ്ഥാനമാക്കിയുള്ള ലോജിക് ---
             all_dates = re.findall(date_pattern, after_slash)
             if not all_dates:
                 continue
                 
             expiry_date_str = all_dates[0]  
             
-            # Expiry Date വച്ചുകൊണ്ട് ഇടതുഭാഗവും വലതുഭാഗവും കൃത്യമായി മുറിക്കുന്നു
             expiry_idx = after_slash.find(expiry_date_str)
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
@@ -113,7 +124,7 @@ if uploaded_file is not None:
             invoice_date_str = ""
             rack_id = ""
             
-            # --- ഇൻവോയ്സ്, റാക്ക് ഐഡി വേർതിരിക്കുന്ന പുതിയ ലോജിക് (* ഒഴിവാക്കുന്നു) ---
+            # --- ഇൻവോയ്സ്, റാക്ക് ഐഡി വേർതിരിക്കുന്നു ---
             if len(right_tokens) > 2:
                 invoice_section = " ".join(right_tokens[2:])
                 
@@ -196,19 +207,16 @@ if uploaded_file is not None:
         ]
         df = df[columns_order]
         
-        # Excel system memory-il വെച്ച് തയാറാക്കുന്നു
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name="Sheet1")
             worksheet = writer.sheets["Sheet1"]
             
-            # 📐 ഓരോ സെല്ലിലെയും തീയതി രൂപവും കോളം വീതിയും കൃത്യമാക്കുന്നു
             for col in worksheet.columns:
                 max_len = 0
                 col_letter = col[0].column_letter
                 for cell in col:
                     if cell.value is not None:
-                        # സമയം ഒഴിവാക്കി തീയതികൾ 'yyyy-mm-dd' ഫോർമാറ്റിലാക്കുന്നു
                         if isinstance(cell.value, (pd.Timestamp, datetime.datetime, datetime.date)):
                             cell.number_format = 'yyyy-mm-dd'
                             cell_len = 10
@@ -219,7 +227,7 @@ if uploaded_file is not None:
                 
         processed_data = output.getvalue()
         
-        st.success("🎉 File processed successfully with 100% accuracy!")
+        st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
         st.download_button(
             label="📥 DOWNLOAD EXCEL FILE",
