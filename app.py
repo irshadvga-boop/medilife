@@ -6,7 +6,6 @@ import datetime
 
 st.set_page_config(page_title="Medical Data Converter", page_icon="📋", layout="centered")
 
-# എങ്ങനെയുള്ള തീയതികൾ വന്നാലും കൃത്യമായി മനസ്സിലാക്കാനുള്ള ഫംഗ്ഷൻ
 def parse_date(d_str):
     try: return pd.to_datetime(d_str, format='%d/%m/%Y')
     except: pass
@@ -22,7 +21,6 @@ def parse_date(d_str):
 st.title("📋 Medical Data Converter")
 st.write("Upload your raw `.TXT` file below to convert it into a formatted Excel sheet.")
 
-# File Uploader component
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
 if uploaded_file is not None:
@@ -30,24 +28,35 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    # 🛠️ സ്പേസ് ഇല്ലാതെ ഒട്ടിനിൽക്കുന്ന തീയതികളെയും (ഉദാ: D2503191/9/2027) കണ്ടുപിടിക്കാനുള്ള പുതിയ പവർഫുൾ റീജക്സ്
     date_pattern = r'(0?[1-9]|[12][0-9]|3[01])/(0?[1-9]|1[012])/(\d{4}|\d{2})|(0?[1-9]|1[012])/(\d{4}|\d{2})'
     
-    # കോമൺ കമ്പനികളുടെ ലിസ്റ്റ്
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
 
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
     raw_lines = stringio.readlines()
 
-    # --- 🛠️ രണ്ട് വരികളിലായി കിടക്കുന്ന ഐറ്റങ്ങളെ ഒന്നാക്കുന്നു ---
+    # --- 🛠️ 100% BULLETPROOF MERGING LOGIC (രണ്ടാമത്തെ വരി ഇനി ഒട്ടും ബ്ലാങ്ക് ആകില്ല) ---
     merged_lines = []
     for line in raw_lines:
         line_raw = line.rstrip('\r\n')
         if not line_raw.strip():
             continue
             
-        if line_raw.startswith('  ') and merged_lines and '\\' in merged_lines[-1] and not list(re.finditer(date_pattern, merged_lines[-1])):
-            merged_lines[-1] = merged_lines[-1] + " " + line_raw.strip()
+        is_continuation = False
+        if merged_lines:
+            # 1. വരി തുടങ്ങുന്നത് സ്പേസിലാണെങ്കിൽ അത് ബാക്കി ഭാഗമാണ്
+            if line_raw[0] in [' ', '\t']:
+                is_continuation = True
+            # 2. രണ്ടാമത്തെ വരി തുടങ്ങുന്നത് സ്ലാഷിലാണെങ്കിൽ (\) അത് ബാക്കി ഭാഗമാണ്
+            elif line_raw.startswith('\\'):
+                is_continuation = True
+            # 3. മുൻപത്തെ വരിയിൽ സ്ലാഷ് ഉണ്ട് പക്ഷേ തീയതി ഇല്ലെങ്കിൽ, ഈ വരി തീർച്ചയായും ബാക്കി ഭാഗമാണ്
+            elif '\\' in merged_lines[-1] and not list(re.finditer(date_pattern, merged_lines[-1])):
+                is_continuation = True
+                
+        if is_continuation:
+            # രണ്ടും കൂടി കൂട്ടി ഒറ്റ വരിയാക്കുന്നു
+            merged_lines[-1] = merged_lines[-1].strip() + " " + line_raw.strip()
         else:
             merged_lines.append(line_raw)
 
@@ -93,14 +102,13 @@ if uploaded_file is not None:
                 item_name = before_slash
                 packing = ""
                 
-            # --- 📆 പുതിയ പവർഫുൾ EXPIRY DATE ലോജിക് ---
+            # --- 📆 EXPIRY DATE ലോജിക് ---
             all_date_matches = list(re.finditer(date_pattern, after_slash))
             if not all_date_matches:
                 continue
                 
             expiry_date_str = all_date_matches[0].group(0)  
             
-            # തീയതി ഒട്ടിപ്പിടിച്ചാണെങ്കിലും കൃത്യമായി മുറിക്കുന്നു
             expiry_idx = after_slash.find(expiry_date_str)
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
@@ -170,75 +178,3 @@ if uploaded_file is not None:
             # --- 📅 എക്സലിലേക്ക് മാറ്റാൻ പാകത്തിലുള്ള തീയതി ഫോർമാറ്റ് ---
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str) if invoice_date_str else pd.NaT
-                
-            try: quantity = int(quantity_str)
-            except: quantity = 0
-                
-            try: mrp = float(mrp_str)
-            except: mrp = 0.0
-                
-            data_rows.append({
-                "Item Name": item_name,
-                "Manufacturer": mfg.upper() if mfg else "MISC.",
-                "Supplier": current_supplier,
-                "Rack ID": rack_id if rack_id else "",
-                "Packing": packing,
-                "Batch": batch if batch else "BN",
-                "Expiry Date": expiry_date,
-                "MRP": mrp,
-                "Quantity": quantity,
-                "Invoice Date": invoice_date,
-                "Invoice Number": invoice if invoice else ""
-            })
-            
-        except Exception as e:
-            pass
-
-    if data_rows:
-        df = pd.DataFrame(data_rows)
-        
-        columns_order = [
-            "Item Name", 
-            "Manufacturer", 
-            "Supplier", 
-            "Rack ID", 
-            "Packing", 
-            "Batch", 
-            "Expiry Date", 
-            "MRP", 
-            "Quantity", 
-            "Invoice Date", 
-            "Invoice Number"
-        ]
-        df = df[columns_order]
-        
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name="Sheet1")
-            worksheet = writer.sheets["Sheet1"]
-            
-            for col in worksheet.columns:
-                max_len = 0
-                col_letter = col[0].column_letter
-                for cell in col:
-                    if cell.value is not None:
-                        if isinstance(cell.value, (pd.Timestamp, datetime.datetime, datetime.date)):
-                            cell.number_format = 'yyyy-mm-dd'
-                            cell_len = 10
-                        else:
-                            cell_len = len(str(cell.value))
-                        max_len = max(max_len, cell_len)
-                worksheet.column_dimensions[col_letter].width = max(max_len + 5, 12)
-                
-        processed_data = output.getvalue()
-        
-        st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
-        
-        st.download_button(
-            label="📥 DOWNLOAD EXCEL FILE",
-            data=processed_data,
-            file_name="perfect_medical_data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.error("Could not parse any valid rows. Please check the file format.")
