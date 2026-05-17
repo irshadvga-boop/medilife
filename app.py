@@ -6,6 +6,19 @@ import datetime
 
 st.set_page_config(page_title="Medical Data Converter", page_icon="📋", layout="centered")
 
+# എങ്ങനെയുള്ള തീയതികൾ വന്നാലും കൃത്യമായി മനസ്സിലാക്കാനുള്ള ഫംഗ്ഷൻ
+def parse_date(d_str):
+    try: return pd.to_datetime(d_str, format='%d/%m/%Y')
+    except: pass
+    try: return pd.to_datetime(d_str, format='%m/%y')
+    except: pass
+    try: return pd.to_datetime(d_str, format='%m/%Y')
+    except: pass
+    try: return pd.to_datetime(d_str, format='%d/%m/%y')
+    except: pass
+    try: return pd.to_datetime(d_str, dayfirst=True)
+    except: return pd.NaT
+
 st.title("📋 Medical Data Converter")
 st.write("Upload your raw `.TXT` file below to convert it into a formatted Excel sheet.")
 
@@ -17,8 +30,8 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    # തീയതികൾ കണ്ടെത്താനുള്ള റീജക്സ് 
-    date_pattern = r'\b\d{1,2}/\d{1,2}/\d{4}\b'
+    # 🛠️ സ്പേസ് ഇല്ലാതെ ഒട്ടിനിൽക്കുന്ന തീയതികളെയും (ഉദാ: D2503191/9/2027) കണ്ടുപിടിക്കാനുള്ള പുതിയ പവർഫുൾ റീജക്സ്
+    date_pattern = r'(0?[1-9]|[12][0-9]|3[01])/(0?[1-9]|1[012])/(\d{4}|\d{2})|(0?[1-9]|1[012])/(\d{4}|\d{2})'
     
     # കോമൺ കമ്പനികളുടെ ലിസ്റ്റ്
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
@@ -33,7 +46,7 @@ if uploaded_file is not None:
         if not line_raw.strip():
             continue
             
-        if line_raw.startswith('  ') and merged_lines and '\\' in merged_lines[-1] and not re.search(date_pattern, merged_lines[-1]):
+        if line_raw.startswith('  ') and merged_lines and '\\' in merged_lines[-1] and not list(re.finditer(date_pattern, merged_lines[-1])):
             merged_lines[-1] = merged_lines[-1] + " " + line_raw.strip()
         else:
             merged_lines.append(line_raw)
@@ -53,7 +66,7 @@ if uploaded_file is not None:
         if not start_parsing or not line_stripped:
             continue
             
-        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു (ഡിസൈൻ വരകൾ ഒഴിവാക്കി)
+        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു
         if '\\' not in line_stripped and '/' not in line_stripped and '-' not in line_stripped and not any(char.isdigit() for char in line_stripped[:12]):
             if "EXPIRED ITEMS" not in line_stripped.upper() and "ITEM NAME" not in line_stripped.upper() and "DATE :" not in line_stripped.upper():
                 current_supplier = line_stripped
@@ -66,7 +79,6 @@ if uploaded_file is not None:
                 before_slash = line_raw[:slash_pos].strip()
                 after_slash = line_raw[slash_pos + 1:].strip()
                 
-                # മെയിൻ ഹെഡ്ഡർ ആയ "Item Name\Manf." അബദ്ധത്തിൽ ഡേറ്റ ആയി വരാതിരിക്കാൻ
                 if "Item Name" in before_slash or "Manf" in after_slash:
                     continue
             else:
@@ -81,13 +93,14 @@ if uploaded_file is not None:
                 item_name = before_slash
                 packing = ""
                 
-            # --- 📆 EXPIRY DATE അടിസ്ഥാനമാക്കിയുള്ള ലോജിക് ---
-            all_dates = re.findall(date_pattern, after_slash)
-            if not all_dates:
+            # --- 📆 പുതിയ പവർഫുൾ EXPIRY DATE ലോജിക് ---
+            all_date_matches = list(re.finditer(date_pattern, after_slash))
+            if not all_date_matches:
                 continue
                 
-            expiry_date_str = all_dates[0]  
+            expiry_date_str = all_date_matches[0].group(0)  
             
+            # തീയതി ഒട്ടിപ്പിടിച്ചാണെങ്കിലും കൃത്യമായി മുറിക്കുന്നു
             expiry_idx = after_slash.find(expiry_date_str)
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
@@ -130,9 +143,9 @@ if uploaded_file is not None:
             if len(right_tokens) > 2:
                 invoice_section = " ".join(right_tokens[2:])
                 
-                inv_date_matches = re.findall(date_pattern, invoice_section)
+                inv_date_matches = list(re.finditer(date_pattern, invoice_section))
                 if inv_date_matches:
-                    invoice_date_str = inv_date_matches[0]
+                    invoice_date_str = inv_date_matches[0].group(0)
                     idx = invoice_section.find(invoice_date_str)
                     
                     invoice_part = invoice_section[:idx].strip()
@@ -155,18 +168,8 @@ if uploaded_file is not None:
                             invoice = val if val != '*' else ""
             
             # --- 📅 എക്സലിലേക്ക് മാറ്റാൻ പാകത്തിലുള്ള തീയതി ഫോർമാറ്റ് ---
-            try:
-                expiry_date = pd.to_datetime(expiry_date_str, format='%d/%m/%Y')
-            except:
-                expiry_date = pd.NaT
-                
-            if invoice_date_str:
-                try:
-                    invoice_date = pd.to_datetime(invoice_date_str, format='%d/%m/%Y')
-                except:
-                    invoice_date = pd.NaT
-            else:
-                invoice_date = pd.NaT
+            expiry_date = parse_date(expiry_date_str)
+            invoice_date = parse_date(invoice_date_str) if invoice_date_str else pd.NaT
                 
             try: quantity = int(quantity_str)
             except: quantity = 0
