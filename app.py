@@ -178,3 +178,75 @@ if uploaded_file is not None:
             # --- 📅 എക്സലിലേക്ക് മാറ്റാൻ പാകത്തിലുള്ള തീയതി ഫോർമാറ്റ് ---
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str) if invoice_date_str else pd.NaT
+                
+            try: quantity = int(quantity_str)
+            except: quantity = 0
+                
+            try: mrp = float(mrp_str)
+            except: mrp = 0.0
+                
+            data_rows.append({
+                "Item Name": item_name,
+                "Manufacturer": mfg.upper() if mfg else "MISC.",
+                "Supplier": current_supplier,
+                "Rack ID": rack_id if rack_id else "",
+                "Packing": packing,
+                "Batch": batch if batch else "BN",
+                "Expiry Date": expiry_date,
+                "MRP": mrp,
+                "Quantity": quantity,
+                "Invoice Date": invoice_date,
+                "Invoice Number": invoice if invoice else ""
+            })
+            
+        except Exception as e:
+            pass
+
+    if data_rows:
+        df = pd.DataFrame(data_rows)
+        
+        columns_order = [
+            "Item Name", 
+            "Manufacturer", 
+            "Supplier", 
+            "Rack ID", 
+            "Packing", 
+            "Batch", 
+            "Expiry Date", 
+            "MRP", 
+            "Quantity", 
+            "Invoice Date", 
+            "Invoice Number"
+        ]
+        df = df[columns_order]
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            worksheet = writer.sheets["Sheet1"]
+            
+            for col in worksheet.columns:
+                max_len = 0
+                col_letter = col[0].column_letter
+                for cell in col:
+                    if cell.value is not None:
+                        if isinstance(cell.value, (pd.Timestamp, datetime.datetime, datetime.date)):
+                            cell.number_format = 'yyyy-mm-dd'
+                            cell_len = 10
+                        else:
+                            cell_len = len(str(cell.value))
+                        max_len = max(max_len, cell_len)
+                worksheet.column_dimensions[col_letter].width = max(max_len + 5, 12)
+                
+        processed_data = output.getvalue()
+        
+        st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
+        
+        st.download_button(
+            label="📥 DOWNLOAD EXCEL FILE",
+            data=processed_data,
+            file_name="perfect_medical_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.error("Could not parse any valid rows. Please check the file format.")
