@@ -6,6 +6,7 @@ import datetime
 
 st.set_page_config(page_title="Medical Data Converter", page_icon="📋", layout="centered")
 
+# എങ്ങനെയുള്ള തീയതികൾ വന്നാലും കൃത്യമായി മനസ്സിലാക്കാനുള്ള ഫംഗ്ഷൻ
 def parse_date(d_str):
     try: return pd.to_datetime(d_str, format='%d/%m/%Y')
     except: pass
@@ -28,7 +29,8 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    date_pattern = r'(0?[1-9]|[12][0-9]|3[01])/(0?[1-9]|1[012])/(\d{4}|\d{2})|(0?[1-9]|1[012])/(\d{4}|\d{2})'
+    # 🛠️ THE ULTIMATE STRICT DATE PATTERN: ദിവസവും മാസവും കൃത്യമായ പരിധിയിൽ (1-31, 1-12) ഉറപ്പാക്കുന്നു. ഒട്ടിപ്പിടിച്ച തീയതികളും 100% കൃത്യമാകും!
+    date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:0?[1-9]|1[012])/\d{2,4}'
     
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
 
@@ -36,19 +38,17 @@ if uploaded_file is not None:
     raw_lines = stringio.readlines()
     cleaned_lines = [line.rstrip('\r\n') for line in raw_lines if line.strip()]
 
-    # --- 🛠️ 100% BULLETPROOF DUAL-MERGE LOGIC ---
+    # --- Dual-Merge Logic (വരികൾ കൂട്ടിയിണക്കുന്നു) ---
     merged_lines = []
     i = 0
     while i < len(cleaned_lines):
         line = cleaned_lines[i]
         
-        # 1. Type B Merge (ഉദാഹരണം: പേര് മാത്രം ഒരു വരിയിൽ, സ്ലാഷ് (\) അടുത്ത വരിയിൽ - TAMZER 0.4)
         if '\\' not in line and "======" not in line and "----" not in line and "EXPIRED" not in line.upper() and "DATE" not in line.upper():
             if i + 1 < len(cleaned_lines) and '\\' in cleaned_lines[i+1] and "Item Name" not in cleaned_lines[i+1]:
                 line = line.strip() + " " + cleaned_lines[i+1].strip()
-                i += 1  # അടുത്ത വരിയെ മെർജ് ചെയ്തതുകൊണ്ട് അത് ഒഴിവാക്കുന്നു
+                i += 1  
                 
-        # 2. Type A Merge (ഉദാഹരണം: സ്ലാഷ് ഉള്ള ഭാഗം ഒരു വരിയിൽ, തീയതി അടുത്ത വരിയിൽ)
         if '\\' in line and not list(re.finditer(date_pattern, line)) and "Item Name" not in line:
             if i + 1 < len(cleaned_lines):
                 line = line.strip() + " " + cleaned_lines[i+1].strip()
@@ -78,7 +78,6 @@ if uploaded_file is not None:
                 continue
             
         try:
-            # സ്ലാഷ് (\) വെച്ച് ഐറ്റം നെയിമും ബാക്കി ഭാഗവും തിരിക്കുന്നു
             if '\\' in line_raw:
                 slash_pos = line_raw.find('\\')
                 before_slash = line_raw[:slash_pos].strip()
