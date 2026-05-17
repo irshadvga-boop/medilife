@@ -26,20 +26,18 @@ if uploaded_file is not None:
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
     raw_lines = stringio.readlines()
 
-    # --- 🛠️ 100% PERFECT FIX: രണ്ട് വരികളിലായി കിടക്കുന്ന ഐറ്റങ്ങളെ ഒന്നാക്കുന്നു ---
+    # --- 🛠️ രണ്ട് വരികളിലായി കിടക്കുന്ന ഐറ്റങ്ങളെ ഒന്നാക്കുന്നു ---
     merged_lines = []
     for line in raw_lines:
         line_raw = line.rstrip('\r\n')
         if not line_raw.strip():
             continue
             
-        # വരി തുടങ്ങുന്നത് സ്പേസിലാണെങ്കിൽ, മുൻപത്തെ വരിയിൽ സ്ലാഷ് (\) ഉണ്ടായിട്ടും തീയതി ഇല്ലെങ്കിൽ അവയെ ഒന്നാക്കുന്നു!
         if line_raw.startswith('  ') and merged_lines and '\\' in merged_lines[-1] and not re.search(date_pattern, merged_lines[-1]):
             merged_lines[-1] = merged_lines[-1] + " " + line_raw.strip()
         else:
             merged_lines.append(line_raw)
 
-    # മെർജ് ചെയ്ത പുതിയ വരികൾ വെച്ച് ഡേറ്റാ വേർതിരിക്കുന്നു
     for line_raw in merged_lines:
         line_stripped = line_raw.strip()
         
@@ -55,8 +53,8 @@ if uploaded_file is not None:
         if not start_parsing or not line_stripped:
             continue
             
-        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു
-        if '\\' not in line_stripped and '/' not in line_stripped and not any(char.isdigit() for char in line_stripped[:12]):
+        # 2. സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു (ഡിസൈൻ വരകൾ ഒഴിവാക്കി)
+        if '\\' not in line_stripped and '/' not in line_stripped and '-' not in line_stripped and not any(char.isdigit() for char in line_stripped[:12]):
             if "EXPIRED ITEMS" not in line_stripped.upper() and "ITEM NAME" not in line_stripped.upper() and "DATE :" not in line_stripped.upper():
                 current_supplier = line_stripped
                 continue
@@ -67,6 +65,10 @@ if uploaded_file is not None:
                 slash_pos = line_raw.find('\\')
                 before_slash = line_raw[:slash_pos].strip()
                 after_slash = line_raw[slash_pos + 1:].strip()
+                
+                # മെയിൻ ഹെഡ്ഡർ ആയ "Item Name\Manf." അബദ്ധത്തിൽ ഡേറ്റ ആയി വരാതിരിക്കാൻ
+                if "Item Name" in before_slash or "Manf" in after_slash:
+                    continue
             else:
                 continue
                 
@@ -152,7 +154,7 @@ if uploaded_file is not None:
                         else:
                             invoice = val if val != '*' else ""
             
-            # --- 📅 എക്സലിലേക്ക് മാറ്റാൻ പാകത്തിലുള്ള ശരിയായ തീയതി ഫോർമാറ്റ് ---
+            # --- 📅 എക്സലിലേക്ക് മാറ്റാൻ പാകത്തിലുള്ള തീയതി ഫോർമാറ്റ് ---
             try:
                 expiry_date = pd.to_datetime(expiry_date_str, format='%d/%m/%Y')
             except:
