@@ -28,6 +28,7 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
+    # 🛠️ THE POWERFUL DATE PATTERN (ഷോർട്ട് തീയതികളും, ഒട്ടിപ്പിടിച്ച തീയതികളും മിസ്സാവില്ല)
     date_pattern = r'(0?[1-9]|[12][0-9]|3[01])/(0?[1-9]|1[012])/(\d{4}|\d{2})|(0?[1-9]|1[012])/(\d{4}|\d{2})'
     
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
@@ -35,7 +36,7 @@ if uploaded_file is not None:
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
     raw_lines = stringio.readlines()
 
-    # --- 🛠️ 100% BULLETPROOF MERGING LOGIC (രണ്ടാമത്തെ വരി ഇനി ഒട്ടും ബ്ലാങ്ക് ആകില്ല) ---
+    # --- 🛠️ 100% BULLETPROOF MERGING LOGIC (രണ്ടാമത്തെ വരികൾ കൃത്യമായി പിടിച്ചെടുക്കുന്നു) ---
     merged_lines = []
     for line in raw_lines:
         line_raw = line.rstrip('\r\n')
@@ -44,18 +45,14 @@ if uploaded_file is not None:
             
         is_continuation = False
         if merged_lines:
-            # 1. വരി തുടങ്ങുന്നത് സ്പേസിലാണെങ്കിൽ അത് ബാക്കി ഭാഗമാണ്
             if line_raw[0] in [' ', '\t']:
                 is_continuation = True
-            # 2. രണ്ടാമത്തെ വരി തുടങ്ങുന്നത് സ്ലാഷിലാണെങ്കിൽ (\) അത് ബാക്കി ഭാഗമാണ്
             elif line_raw.startswith('\\'):
                 is_continuation = True
-            # 3. മുൻപത്തെ വരിയിൽ സ്ലാഷ് ഉണ്ട് പക്ഷേ തീയതി ഇല്ലെങ്കിൽ, ഈ വരി തീർച്ചയായും ബാക്കി ഭാഗമാണ്
             elif '\\' in merged_lines[-1] and not list(re.finditer(date_pattern, merged_lines[-1])):
                 is_continuation = True
                 
         if is_continuation:
-            # രണ്ടും കൂടി കൂട്ടി ഒറ്റ വരിയാക്കുന്നു
             merged_lines[-1] = merged_lines[-1].strip() + " " + line_raw.strip()
         else:
             merged_lines.append(line_raw)
@@ -63,7 +60,6 @@ if uploaded_file is not None:
     for line_raw in merged_lines:
         line_stripped = line_raw.strip()
         
-        # 1. റിപ്പോർട്ട് ഹെഡ്ഡറുകൾ ഒഴിവാക്കുന്നു
         if "======" in line_stripped:
             start_parsing = True
             continue
