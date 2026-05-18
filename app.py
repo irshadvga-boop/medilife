@@ -32,7 +32,16 @@ if uploaded_file is not None:
     # 🛠️ THE ULTIMATE STRICT DATE PATTERN
     date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|(?:0?[1-9]|1[012])/\d{2,4})(?=\s)'
     
-    known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
+    # 🛠️ വലിയൊരു കമ്പനികളുടെ ലിസ്റ്റ് (MICRO ഉൾപ്പെടെ)
+    known_mfgs = [
+        "DR. REDDY", "DR.REDDY", "BOEHRING", "CHETHANA", "LA RENON", "GLENMARK", "BLUECROS", 
+        "MACLEODS", "SYSTOPIC", "BLUECOSS", "DA RENON", "RELIANCE", "ISIS HEA", "CU-CARD", 
+        "CU CARD", "ALEMBIC", "CURATIO", "AKESISS", "LEEFORD", "MANKIND", "LIVIDUS", "PANACEA", 
+        "WALLACE", "RENAUXE", "ARISTO", "ZEYYER", "AVELOR", "REDDYS", "KISWAR", "AKESIS", 
+        "BIOCON", "SANOFI", "ABBOTT", "GERMAN", "LUPIN", "ALKEM", "EYSYS", "MISC.", "PIRCA", 
+        "INTAS", "AUREL", "CIPLA", "MICRO", "LLOYD", "ZYDUS", "ELITE", "IPCA", "ICON", "H&H", 
+        "SUN", "ZEY", "USV"
+    ]
 
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
     raw_lines = stringio.readlines()
@@ -105,7 +114,7 @@ if uploaded_file is not None:
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
             
-            # --- 🛠️ Manufacturer & Batch Extraction (MICRO VIB Fix) ---
+            # 🛠️ --- Manufacturer & Batch Extraction ---
             mfg = ""
             batch = ""
             
@@ -124,12 +133,10 @@ if uploaded_file is not None:
                     combined = mfg_batch_tokens[0]
                     words = combined.split()
                     
-                    # Oru space mathrame ullu enkilum last word number aanenkil athine batch aayum mfg aayum thirikkum
                     if len(words) > 1 and any(char.isdigit() for char in words[-1]):
                         mfg = " ".join(words[:-1]).strip()
                         batch = words[-1].strip()
                     else:
-                        # Space ottum illatha items-nu vendi ulla lazy match
                         match = re.match(r'^([a-zA-Z\s\-\.\*]+?)([0-9].*)$', combined)
                         if match:
                             mfg = match.group(1).strip()
@@ -239,7 +246,7 @@ if uploaded_file is not None:
         
         st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
-        # 🕒 Indian Time (IST) Logic Veendum Add Cheythu
+        # 🕒 ഇന്ത്യൻ സമയം (IST) കൃത്യമായി കണ്ടെത്തി ഫയലിന്റെ പേര് നൽകുന്നു
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
         dynamic_filename = f"{current_time} - offline stocks.xlsx"
