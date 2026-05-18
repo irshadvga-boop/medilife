@@ -3,11 +3,9 @@ import pandas as pd
 import re
 import io
 import datetime
-import pytz
 
 st.set_page_config(page_title="Medical Data Converter", page_icon="📋", layout="centered")
 
-# എങ്ങനെയുള്ള തീയതികൾ വന്നാലും കൃത്യമായി മനസ്സിലാക്കാനുള്ള ഫംഗ്ഷൻ
 def parse_date(d_str):
     try: return pd.to_datetime(d_str, format='%d/%m/%Y')
     except: pass
@@ -30,7 +28,6 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    # 🛠️ THE ULTIMATE STRICT DATE PATTERN
     date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|(?:0?[1-9]|1[012])/\d{2,4})(?=\s)'
     
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
@@ -72,7 +69,6 @@ if uploaded_file is not None:
         if not start_parsing or not line_stripped:
             continue
             
-        # സപ്ലയർ ഹെഡ്ഡർ കണ്ടെത്തുന്നു
         if '\\' not in line_stripped and '/' not in line_stripped and '-' not in line_stripped and not any(char.isdigit() for char in line_stripped[:12]):
             if "EXPIRED ITEMS" not in line_stripped.upper() and "ITEM NAME" not in line_stripped.upper() and "DATE :" not in line_stripped.upper():
                 current_supplier = line_stripped
@@ -89,7 +85,6 @@ if uploaded_file is not None:
             else:
                 continue
                 
-            # --- Item Name & Packing Extraction ---
             if '-' in before_slash:
                 item_name, packing = before_slash.rsplit('-', 1)
                 item_name = item_name.strip()
@@ -98,7 +93,6 @@ if uploaded_file is not None:
                 item_name = before_slash
                 packing = ""
                 
-            # --- 📆 EXPIRY DATE ലോജിക് ---
             all_date_matches = list(re.finditer(date_pattern, after_slash))
             if not all_date_matches:
                 continue
@@ -109,10 +103,11 @@ if uploaded_file is not None:
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
             
-            # --- Manufacturer & Batch Extraction ---
+            # 🛠️ --- പുതിയ SMART Manufacturer & Batch Extraction (MICRO ഉം VIB ഉം മിക്സ് ആകില്ല) ---
             mfg = ""
             batch = ""
             
+            # 1. ആദ്യം Known Manufacturers ലിസ്റ്റിൽ ഉണ്ടോ എന്ന് നോക്കുന്നു
             for k_mfg in known_mfgs:
                 if left_part.upper().startswith(k_mfg.upper()):
                     mfg = k_mfg
@@ -120,21 +115,30 @@ if uploaded_file is not None:
                     break
             
             if not mfg:
+                # 2. രണ്ടോ അതിലധികമോ സ്പേസ് വെച്ച് മുറിക്കാൻ നോക്കുന്നു
                 mfg_batch_tokens = re.split(r'\s{2,}', left_part)
                 if len(mfg_batch_tokens) >= 2:
                     mfg = mfg_batch_tokens[0].strip()
                     batch = mfg_batch_tokens[1].strip()
                 else:
+                    # 3. ഒരൊറ്റ സ്പേസ് മാത്രമുള്ള അവസ്ഥ (ഉദാഹരണത്തിന്: MICRO VIB12345)
                     combined = mfg_batch_tokens[0]
-                    match = re.match(r'^([a-zA-Z\s\-\.\*]+)(.*)$', combined)
-                    if match:
-                        mfg = match.group(1).strip()
-                        batch = match.group(2).strip()
+                    words = combined.split()
+                    
+                    if len(words) > 1 and any(char.isdigit() for char in words[-1]):
+                        # അവസാനത്തെ വാക്കിൽ നമ്പർ ഉണ്ടെങ്കിൽ അത് ഉറപ്പായും ബാച്ച് ആയിരിക്കും!
+                        mfg = " ".join(words[:-1])
+                        batch = words[-1]
                     else:
-                        mfg = combined
-                        batch = ""
+                        # 4. സ്പേസ് ഒട്ടുമില്ലാതെ ഒട്ടിപ്പിടിച്ചിരിക്കുന്ന അവസ്ഥ
+                        match = re.match(r'^([a-zA-Z\s\-\.\*]+?)([0-9].*)$', combined)
+                        if match:
+                            mfg = match.group(1).strip()
+                            batch = match.group(2).strip()
+                        else:
+                            mfg = combined
+                            batch = ""
 
-            # --- Quantity & MRP Extraction ---
             right_tokens = right_part.split()
             quantity_str = right_tokens[0] if len(right_tokens) > 0 else "0"
             mrp_str = right_tokens[1] if len(right_tokens) > 1 else "0.0"
@@ -143,7 +147,6 @@ if uploaded_file is not None:
             invoice_date_str = ""
             rack_id = ""
             
-            # --- ഇൻവോയ്സ്, റാക്ക് ഐഡി വേർതിരിക്കുന്നു ---
             if len(right_tokens) > 2:
                 invoice_section = " ".join(right_tokens[2:])
                 
@@ -171,7 +174,6 @@ if uploaded_file is not None:
                         else:
                             invoice = val if val != '*' else ""
             
-            # --- 📅 എക്സലിലേക്ക് മാറ്റാൻ പാകത്തിലുള്ള തീയതി ഫോർമാറ്റ് ---
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str) if invoice_date_str else pd.NaT
                 
@@ -238,9 +240,7 @@ if uploaded_file is not None:
         
         st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
-        # 🕒 ഇന്ത്യൻ സമയം (IST) കൃത്യമായി കണ്ടെത്തി ഫയലിന്റെ പേര് നൽകുന്നു
-        ist = pytz.timezone('Asia/Kolkata')
-        current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
+        current_time = datetime.datetime.now().strftime("%d-%m-%Y %I-%M-%p")
         dynamic_filename = f"{current_time}-offline stocks.xlsx"
         
         st.download_button(
