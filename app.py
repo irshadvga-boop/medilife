@@ -32,9 +32,9 @@ if uploaded_file is not None:
     # 🛠️ THE ULTIMATE STRICT DATE PATTERN
     date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|(?:0?[1-9]|1[012])/\d{2,4})(?=\s)'
     
-    # 🛠️ വലിയൊരു കമ്പനികളുടെ ലിസ്റ്റ് (MICRO ഉൾപ്പെടെ)
+    # 🛠️ വലിയൊരു കമ്പനികളുടെ ലിസ്റ്റ് (MICRO GEN ഉൾപ്പെടെ)
     known_mfgs = [
-        "DR. REDDY", "DR.REDDY", "BOEHRING", "CHETHANA", "LA RENON", "GLENMARK", "BLUECROS", 
+        "MICRO GEN", "DR. REDDY", "DR.REDDY", "BOEHRING", "CHETHANA", "LA RENON", "GLENMARK", "BLUECROS", 
         "MACLEODS", "SYSTOPIC", "BLUECOSS", "DA RENON", "RELIANCE", "ISIS HEA", "CU-CARD", 
         "CU CARD", "ALEMBIC", "CURATIO", "AKESISS", "LEEFORD", "MANKIND", "LIVIDUS", "PANACEA", 
         "WALLACE", "RENAUXE", "ARISTO", "ZEYYER", "AVELOR", "REDDYS", "KISWAR", "AKESIS", 
@@ -114,7 +114,7 @@ if uploaded_file is not None:
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
             
-            # 🛠️ --- Manufacturer & Batch Extraction ---
+            # --- Manufacturer & Batch Extraction ---
             mfg = ""
             batch = ""
             
@@ -246,10 +246,9 @@ if uploaded_file is not None:
         
         st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
-        # 🕒 ഇന്ത്യൻ സമയം (IST) കൃത്യമായി കണ്ടെത്തി ഫയലിന്റെ പേര് നൽകുന്നു
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
-        dynamic_filename = f"{current_time} - offline stocks.xlsx"
+        dynamic_filename = f"{current_time}-offline stocks.xlsx"
         
         st.download_button(
             label="📥 DOWNLOAD EXCEL FILE",
