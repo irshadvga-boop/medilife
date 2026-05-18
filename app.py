@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import io
 import datetime
+import pytz
 
 st.set_page_config(page_title="Medical Data Converter", page_icon="📋", layout="centered")
 
@@ -28,6 +29,7 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
+    # 🛠️ THE ULTIMATE STRICT DATE PATTERN
     date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|(?:0?[1-9]|1[012])/\d{2,4})(?=\s)'
     
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
@@ -103,11 +105,10 @@ if uploaded_file is not None:
             left_part = after_slash[:expiry_idx].strip()   
             right_part = after_slash[expiry_idx + len(expiry_date_str):].strip() 
             
-            # 🛠️ --- പുതിയ SMART Manufacturer & Batch Extraction (MICRO ഉം VIB ഉം മിക്സ് ആകില്ല) ---
+            # --- 🛠️ Manufacturer & Batch Extraction (MICRO VIB Fix) ---
             mfg = ""
             batch = ""
             
-            # 1. ആദ്യം Known Manufacturers ലിസ്റ്റിൽ ഉണ്ടോ എന്ന് നോക്കുന്നു
             for k_mfg in known_mfgs:
                 if left_part.upper().startswith(k_mfg.upper()):
                     mfg = k_mfg
@@ -115,22 +116,20 @@ if uploaded_file is not None:
                     break
             
             if not mfg:
-                # 2. രണ്ടോ അതിലധികമോ സ്പേസ് വെച്ച് മുറിക്കാൻ നോക്കുന്നു
                 mfg_batch_tokens = re.split(r'\s{2,}', left_part)
                 if len(mfg_batch_tokens) >= 2:
                     mfg = mfg_batch_tokens[0].strip()
                     batch = mfg_batch_tokens[1].strip()
                 else:
-                    # 3. ഒരൊറ്റ സ്പേസ് മാത്രമുള്ള അവസ്ഥ (ഉദാഹരണത്തിന്: MICRO VIB12345)
                     combined = mfg_batch_tokens[0]
                     words = combined.split()
                     
+                    # Oru space mathrame ullu enkilum last word number aanenkil athine batch aayum mfg aayum thirikkum
                     if len(words) > 1 and any(char.isdigit() for char in words[-1]):
-                        # അവസാനത്തെ വാക്കിൽ നമ്പർ ഉണ്ടെങ്കിൽ അത് ഉറപ്പായും ബാച്ച് ആയിരിക്കും!
-                        mfg = " ".join(words[:-1])
-                        batch = words[-1]
+                        mfg = " ".join(words[:-1]).strip()
+                        batch = words[-1].strip()
                     else:
-                        # 4. സ്പേസ് ഒട്ടുമില്ലാതെ ഒട്ടിപ്പിടിച്ചിരിക്കുന്ന അവസ്ഥ
+                        # Space ottum illatha items-nu vendi ulla lazy match
                         match = re.match(r'^([a-zA-Z\s\-\.\*]+?)([0-9].*)$', combined)
                         if match:
                             mfg = match.group(1).strip()
@@ -240,8 +239,10 @@ if uploaded_file is not None:
         
         st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
-        current_time = datetime.datetime.now().strftime("%d-%m-%Y %I-%M-%p")
-        dynamic_filename = f"{current_time}-offline stocks.xlsx"
+        # 🕒 Indian Time (IST) Logic Veendum Add Cheythu
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
+        dynamic_filename = f"{current_time} - offline stocks.xlsx"
         
         st.download_button(
             label="📥 DOWNLOAD EXCEL FILE",
