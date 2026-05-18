@@ -29,8 +29,11 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    # 🛠️ THE ULTIMATE STRICT DATE PATTERN: ദിവസവും മാസവും കൃത്യമായ പരിധിയിൽ (1-31, 1-12) ഉറപ്പാക്കുന്നു. ഒട്ടിപ്പിടിച്ച തീയതികളും 100% കൃത്യമാകും!
-    date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:0?[1-9]|1[012])/\d{2,4}'
+    # 🛠️ THE ULTIMATE STRICT DATE PATTERN: 
+    # ദിവസവും മാസവും കൃത്യമായ പരിധിയിൽ (1-31, 1-12) ഉറപ്പാക്കുന്നു. ഒട്ടിപ്പിടിച്ച തീയതികളും 100% കൃത്യമാകും!
+    # ബാച്ച് നമ്പറിനകത്തുള്ള (ഉദാ: LGP08/293/05) അക്കങ്ങളെ തീയതിയായി തെറ്റിദ്ധരിക്കുന്നത് പൂർണ്ണമായി ഒഴിവാക്കാൻ 
+    # യഥാർത്ഥ തീയതികൾക്കും സ്പേസുകൾക്കും മുൻഗണന നൽകുന്ന മികച്ച റീജക്സ്!
+    date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|(?:0?[1-9]|1[012])/\d{2,4})(?=\s)'
     
     known_mfgs = ["LA RENON", "LIVIDUS", "LUPIN", "RENAUXE", "DA RENON", "BOEHRING", "AKESIS", "Isis Hea", "AVELOR", "KISWAR", "AUREL", "CU CARD", "CU-CARD", "EYSYS", "MACLEODS", "MISC."]
 
@@ -38,17 +41,19 @@ if uploaded_file is not None:
     raw_lines = stringio.readlines()
     cleaned_lines = [line.rstrip('\r\n') for line in raw_lines if line.strip()]
 
-    # --- Dual-Merge Logic (വരികൾ കൂട്ടിയിണക്കുന്നു) ---
+    # --- Dual-Merge Logic (രണ്ട് വരികളിൽ വരുന്ന വിവരങ്ങൾ ഒന്നിപ്പിക്കുന്നു) ---
     merged_lines = []
     i = 0
     while i < len(cleaned_lines):
         line = cleaned_lines[i]
         
+        # Type B Merge: പേര് മാത്രം ഒരു വരിയിലും ബാക്കി ഭാഗം താഴെയും വരുമ്പോൾ
         if '\\' not in line and "======" not in line and "----" not in line and "EXPIRED" not in line.upper() and "DATE" not in line.upper():
             if i + 1 < len(cleaned_lines) and '\\' in cleaned_lines[i+1] and "Item Name" not in cleaned_lines[i+1]:
                 line = line.strip() + " " + cleaned_lines[i+1].strip()
                 i += 1  
                 
+        # Type A Merge: സ്ലാഷ് ഉള്ള ഭാഗം മുകളിലും തീയതി താഴെയും വരുമ്പോൾ
         if '\\' in line and not list(re.finditer(date_pattern, line)) and "Item Name" not in line:
             if i + 1 < len(cleaned_lines):
                 line = line.strip() + " " + cleaned_lines[i+1].strip()
@@ -237,10 +242,14 @@ if uploaded_file is not None:
         
         st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
+        # 🕒 ഫയലിന്റെ പേര് ആ സമയത്തെ തീയതിയും സമയവും വെച്ച് ഡൈനാമിക് ആയി നൽകുന്നു
+        current_time = datetime.datetime.now().strftime("%d-%m-%Y %I-%M-%p")
+        dynamic_filename = f"{current_time}-offline stocks.xlsx"
+        
         st.download_button(
             label="📥 DOWNLOAD EXCEL FILE",
             data=processed_data,
-            file_name="perfect_medical_data.xlsx",
+            file_name=dynamic_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
