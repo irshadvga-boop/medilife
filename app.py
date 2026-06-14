@@ -9,16 +9,15 @@ from supabase import create_client, Client
 
 st.set_page_config(page_title="Medical Data Converter (Supabase - Final)", page_icon="📋", layout="centered")
 
-# 🔐 SUPABASE CREDENTIALS (സ്പേസുകൾ ഇല്ലാതെ കൃത്യമായി നൽകുക)
-SUPABASE_URL = "YOUR_SUPABASE_URL"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY"
+# 🔐 SUPABASE CREDENTIALS (നിങ്ങളുടെ വലിയ API Key മാത്രം മാറ്റുക)
+SUPABASE_URL = "https://fivchvttdrxywtatqv.supabase.co"
+SUPABASE_KEY = "YOUR_SUPABASE_KEY"  # 💡 ഇവിടെ നിങ്ങളുടെ വലിയ API Key പേസ്റ്റ് ചെയ്യുക
 TABLE_NAME = "expired_stocks" 
 
 # സുപബേസ് ക്ലയന്റ് സുരക്ഷിതമായി ഇനിഷ്യലൈസ് ചെയ്യുന്നു
 supabase = None
 try:
-    if SUPABASE_URL != "YOUR_SUPABASE_URL":
-        # URL-ലോ Key-യിലോ ഉള്ള സ്പേസുകൾ ഒഴിവാക്കാൻ strip() ഉപയോഗിക്കുന്നു
+    if SUPABASE_KEY != "YOUR_SUPABASE_KEY":
         supabase = create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
 except Exception as e:
     st.error(f"Supabase Connection Error: {e}")
@@ -52,7 +51,6 @@ if uploaded_file is not None:
     # Strict date pattern
     date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b'
     
-    # 💡 സിന്റാക്സ് എറർ പരിഹരിച്ച ഭാഗം (Syntax error fixed here)
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="ignore"))
     raw_lines = stringio.readlines()
     cleaned_lines = [line.rstrip('\r\n') for line in raw_lines if line.strip()]
@@ -98,7 +96,6 @@ if uploaded_file is not None:
             else:
                 continue
                 
-            # Column Mapping Rules for Item Name & Packing
             match_item = re.search(r'^(.*?-\d)', before_slash)
             if match_item:
                 item_name = match_item.group(1).strip()
@@ -111,7 +108,6 @@ if uploaded_file is not None:
                 item_name = before_slash
                 packing = ""
                 
-            # BULLETPROOF ROW PARSER:
             inv_split = [p.strip() for p in after_slash.split(" - ")]
             rack_val = "-"
             invoice_date_str = ""
@@ -165,11 +161,9 @@ if uploaded_file is not None:
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str)
             
-            # 💡 തികച്ചും സുരക്ഷിതമായ Date Formatting (NaT Errors Fixed)
             exp_formatted = expiry_date.strftime('%Y-%m-%d') if pd.notna(expiry_date) else None
             inv_formatted = invoice_date.strftime('%Y-%m-%d') if pd.notna(invoice_date) else None
             
-            # DB കോളങ്ങൾക്കനുസരിച്ച് (Lowercase + Underscore) ഡാറ്റ ഒരുക്കുന്നു
             data_rows.append({
                 "item_name": item_name,
                 "manufacturer": mfg.upper() if mfg else "MISC.",
@@ -190,15 +184,13 @@ if uploaded_file is not None:
         df = pd.DataFrame(data_rows)
         df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
         
-        # --- 🚀 SUPABASE AUTO-REPLACE (Payload Size & Connection Errors Fixed) ---
-        if supabase:
+        # --- 🚀 SUPABASE AUTO-REPLACE ---
+        if supabase is not None:
             try:
                 records = df.to_dict(orient="records")
                 
-                # പഴയ ഡാറ്റ ക്ലിയർ ചെയ്യുന്നു
                 supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
                 
-                # പുതിയ ഡാറ്റ 1000 വീതമുള്ള ചങ്കുകളാക്കി പുഷ് ചെയ്യുന്നു
                 chunk_size = 1000
                 for i in range(0, len(records), chunk_size):
                     chunk = records[i:i + chunk_size]
@@ -208,7 +200,7 @@ if uploaded_file is not None:
             except Exception as db_err:
                 st.error(f"Failed to auto-upload to Supabase: {db_err}")
         else:
-            st.warning("⚠️ Supabase connection is missing or Invalid! Data is only available for CSV download.")
+            st.warning("⚠️ Supabase connection failed! Data is only available for CSV download.")
             
         # --- CSV Backup Generation ---
         csv_df = df.copy()
