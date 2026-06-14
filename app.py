@@ -14,14 +14,16 @@ SUPABASE_URL = "YOUR_SUPABASE_URL"
 SUPABASE_KEY = "YOUR_SUPABASE_KEY"
 TABLE_NAME = "expired_stocks" 
 
+# സുപബേസ് ക്ലയന്റ് സുരക്ഷിതമായി ഇനിഷ്യലൈസ് ചെയ്യുന്നു
+supabase = None
 try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"Supabase Connection Error: {e}")
 
 def parse_date(d_str):
-    if not d_str or d_str.strip() == "" or d_str.strip() == "-":
-        return None
+    if not d_str or str(d_str).strip() == "" or str(d_str).strip() == "-":
+        return pd.NaT
     try: return pd.to_datetime(d_str, format='%d/%m/%Y')
     except: pass
     try: return pd.to_datetime(d_str, format='%m/%y')
@@ -31,12 +33,12 @@ def parse_date(d_str):
     try: return pd.to_datetime(d_str, format='%d/%m/%y')
     except: pass
     try: 
-        dt = pd.to_datetime(d_str, dayfirst=True, errors='coerce')
-        return None if pd.isna(dt) else dt
-    except: return None
+        return pd.to_datetime(d_str, dayfirst=True, errors='coerce')
+    except: 
+        return pd.NaT
 
-st.title("📋 Medical Data Converter (Strict DB Columns)")
-st.write("Upload your raw `.TXT` file. This version strictly uses lowercase and underscores for database columns.")
+st.title("📋 Medical Data Converter (Error Free Version)")
+st.write("Upload your raw `.TXT` file. All Date errors and Connection errors are fixed in this version.")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -160,7 +162,10 @@ if uploaded_file is not None:
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str)
             
-            # 💡 STRICT DB COLUMN MAPPING: No spaces, No capital letters
+            # 💡 തികച്ചും സുരക്ഷിതമായ Date Formatting (Error 1 Fixed)
+            exp_formatted = expiry_date.strftime('%Y-%m-%d') if pd.notna(expiry_date) else None
+            inv_formatted = invoice_date.strftime('%Y-%m-%d') if pd.notna(invoice_date) else None
+            
             data_rows.append({
                 "item_name": item_name,
                 "manufacturer": mfg.upper() if mfg else "MISC.",
@@ -168,10 +173,10 @@ if uploaded_file is not None:
                 "rack_id": rack_val if rack_val and rack_val != "" else "-",
                 "packing": packing if packing and packing != "" else "-",
                 "batch": batch if batch and batch != "" else "BN",
-                "expiry_date": expiry_date.strftime('%Y-%m-%d') if expiry_date else None,
+                "expiry_date": exp_formatted,
                 "mrp": mrp,
                 "quantity": quantity,
-                "invoice_date": invoice_date.strftime('%Y-%m-%d') if invoice_date else None,
+                "invoice_date": inv_formatted,
                 "invoice_number": invoice if invoice and invoice != "" else "-"
             })
         except Exception as e:
@@ -181,25 +186,27 @@ if uploaded_file is not None:
         df = pd.DataFrame(data_rows)
         df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
         
-        # --- 🚀 SUPABASE AUTO-REPLACE ---
-        try:
-            records = df.to_dict(orient="records")
-            
-            # 1. പഴയ ഡാറ്റ ക്ലിയർ ചെയ്യുന്നു (quantity എന്നത് സ്മാൾ ലെറ്ററിൽ തന്നെ ഉപയോഗിക്കുന്നു)
-            supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
-            
-            # 2. പുതിയ ഡാറ്റ ചങ്കുകളാക്കി പുഷ് ചെയ്യുന്നു
-            chunk_size = 1000
-            for i in range(0, len(records), chunk_size):
-                chunk = records[i:i + chunk_size]
-                supabase.table(TABLE_NAME).insert(chunk).execute()
+        # --- 🚀 SUPABASE AUTO-REPLACE (Error 2 Fixed) ---
+        if supabase:
+            try:
+                records = df.to_dict(orient="records")
                 
-            st.success(f"⚡ Successfully uploaded {len(df)} records to Supabase! (Column mapping is perfect)")
-        except Exception as db_err:
-            st.error(f"Failed to auto-upload to Supabase: {db_err}")
+                # പഴയ ഡാറ്റ ക്ലിയർ ചെയ്യുന്നു
+                supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
+                
+                # പുതിയ ഡാറ്റ ചങ്കുകളാക്കി പുഷ് ചെയ്യുന്നു
+                chunk_size = 1000
+                for i in range(0, len(records), chunk_size):
+                    chunk = records[i:i + chunk_size]
+                    supabase.table(TABLE_NAME).insert(chunk).execute()
+                    
+                st.success(f"⚡ Successfully uploaded {len(df)} records to Supabase! All errors resolved.")
+            except Exception as db_err:
+                st.error(f"Failed to auto-upload to Supabase: {db_err}")
+        else:
+            st.warning("⚠️ Supabase connection is missing! Data is only available for CSV download.")
             
         # --- CSV Backup Generation ---
-        # (ഡൗൺലോഡ് ചെയ്യുന്ന എക്സലിൽ/CSV-യിൽ വായിക്കാൻ എളുപ്പത്തിന് പഴയതുപോലെ വലിയ അക്ഷരങ്ങളും സ്പേസുകളും കൊടുക്കാം, ഇത് ഡാറ്റാബേസിനെ ബാധിക്കില്ല)
         csv_df = df.copy()
         csv_df.columns = [
             "Item Name", "Manufacturer", "Supplier", "Rack ID", 
