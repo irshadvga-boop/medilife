@@ -7,7 +7,7 @@ import pytz
 import base64
 from supabase import create_client, Client
 
-st.set_page_config(page_title="Medical Data Converter (Supabase - Stable)", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (Supabase - Production)", page_icon="📋", layout="centered")
 
 # 🔐 SUPABASE CREDENTIALS (ഇവിടെ നിങ്ങളുടെ വിവരങ്ങൾ മാറ്റുക)
 SUPABASE_URL = "YOUR_SUPABASE_URL"
@@ -20,6 +20,8 @@ except Exception as e:
     st.error(f"Supabase Connection Error: {e}")
 
 def parse_date(d_str):
+    if not d_str or d_str.strip() == "" or d_str.strip() == "-":
+        return None
     try: return pd.to_datetime(d_str, format='%d/%m/%Y')
     except: pass
     try: return pd.to_datetime(d_str, format='%m/%y')
@@ -28,11 +30,13 @@ def parse_date(d_str):
     except: pass
     try: return pd.to_datetime(d_str, format='%d/%m/%y')
     except: pass
-    try: return pd.to_datetime(d_str, dayfirst=True)
-    except: return pd.NaT
+    try: 
+        dt = pd.to_datetime(d_str, dayfirst=True, errors='coerce')
+        return None if pd.isna(dt) else dt
+    except: return None
 
-st.title("📋 Medical Data Converter (Stable Engine)")
-st.write("Upload your raw `.TXT` file. This version uses a robust dual-direction parser to avoid syntax errors.")
+st.title("📋 Medical Data Converter (Production Stable)")
+st.write("Upload your raw `.TXT` file. This version handles missing invoice dates perfectly for Supabase.")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -102,8 +106,7 @@ if uploaded_file is not None:
                 item_name = before_slash
                 packing = ""
                 
-            # 🎯 BULLETPROOF ROW PARSER:
-            # വലതുവശത്തുനിന്നും ഹൈഫനുകൾ വെച്ച് Invoice Details വേർതിരിക്കുന്നു
+            # BULLETPROOF ROW PARSER:
             inv_split = [p.strip() for p in after_slash.split(" - ")]
             rack_id = "-"
             invoice_date_str = ""
@@ -112,7 +115,6 @@ if uploaded_file is not None:
             if len(inv_split) >= 3:
                 rack_id = inv_split[-1]
                 invoice_date_str = inv_split[-2]
-                # ആദ്യത്തെ പാർട്ടിൽ നിന്നും ബാക്കി ഇൻവോയ്സ് നമ്പർ കണ്ടുപിടിക്കണം
                 left_over_inv = inv_split[0]
             elif len(inv_split) == 2:
                 invoice_date_str = inv_split[-1]
@@ -120,7 +122,6 @@ if uploaded_file is not None:
             else:
                 left_over_inv = after_slash
 
-            # അടിയന്തിരമായി Expiry Date കണ്ടുപിടിക്കുന്നു (ഇതാണ് നമ്മുടെ സെൻ്റർ പോയിന്റ്)
             all_date_matches = list(re.finditer(date_pattern, left_over_inv))
             if not all_date_matches:
                 continue
@@ -128,15 +129,11 @@ if uploaded_file is not None:
             expiry_date_str = all_date_matches[0].group(0)
             exp_start_idx = left_over_inv.find(expiry_date_str)
             
-            # എക്സ്പെയറിക്ക് മുൻപിലുള്ള ഭാഗം (Manufacturer & Batch)
             mfg_batch_part = left_over_inv[:exp_start_idx].strip()
-            # എക്സ്പെയറിക്ക് ശേഷമുള്ള ഭാഗം (Qty, MRP & Invoice Number)
             qty_mrp_inv_part = left_over_inv[exp_start_idx + len(expiry_date_str):].strip()
             
-            # 1. Manufacturer & Batch വേർതിരിക്കൽ
             mfg_batch_tokens = [t.strip() for t in re.split(r'\s+', mfg_batch_part) if t.strip()]
             if len(mfg_batch_tokens) >= 2:
-                # അവസാനത്തെ ടോക്കൺ എപ്പോഴും ബാച്ച് നമ്പർ ആയിരിക്കും
                 batch = mfg_batch_tokens[-1]
                 mfg = " ".join(mfg_batch_tokens[:-1])
             elif len(mfg_batch_tokens) == 1:
@@ -146,7 +143,6 @@ if uploaded_file is not None:
                 mfg = "MISC."
                 batch = "BN"
                 
-            # 2. Qty, MRP & Invoice Number വേർതിരിക്കൽ (നിങ്ങൾ പറഞ്ഞ എറർ ഒഴിവാക്കാൻ ഇവിടെയാണ് മാറ്റം വരുത്തിയത്)
             qty_mrp_tokens = [t.strip() for t in re.split(r'\s+', qty_mrp_inv_part) if t.strip()]
             
             quantity = 0
@@ -159,38 +155,35 @@ if uploaded_file is not None:
                 try: mrp = float(qty_mrp_tokens[1])
                 except: pass
             if len(qty_mrp_tokens) >= 3:
-                # ബാക്കി വരുന്ന എല്ലാ ടോക്കണും ഇൻവോയ്സ് നമ്പറിലേക്ക് ലയിപ്പിക്കുന്നു
                 invoice = " ".join(qty_mrp_tokens[2:])
             
-            # ഡേറ്റ് ഒബ്ജക്റ്റുകൾ ജനറേറ്റ് ചെയ്യുന്നു
+            # ഡേറ്റ് ഒബ്ജക്റ്റുകൾ ജനറേറ്റ് ചെയ്യുന്നു (Invalid ആണെങ്കിൽ None ആകും)
             expiry_date = parse_date(expiry_date_str)
-            invoice_date = parse_date(invoice_date_str) if invoice_date_str else pd.NaT
+            invoice_date = parse_date(invoice_date_str)
             
+            # Supabase-ലേക്ക് സുരക്ഷിതമായി ഡാറ്റ മാറ്റുന്നു
             data_rows.append({
                 "item_name": item_name,
                 "manufacturer": mfg.upper() if mfg else "MISC.",
                 "supplier": current_supplier.upper(),
-                "rack": rack_id if rack_id else "-",
-                "packing": packing if packing else "-",
-                "batch": batch if batch else "BN",
-                "expiry_date": expiry_date,
+                "rack": rack_id if rack_id and rack_id != "" else "-",
+                "packing": packing if packing and packing != "" else "-",
+                "batch": batch if batch and batch != "" else "BN",
+                "expiry_date": expiry_date.strftime('%Y-%m-%d') if expiry_date else None,
                 "mrp": mrp,
                 "quantity": quantity,
-                "invoice_date": invoice_date,
-                "invoice_number": invoice if invoice else "-"
+                "invoice_date": invoice_date.strftime('%Y-%m-%d') if invoice_date else None,
+                "invoice_number": invoice if invoice and invoice != "" else "-"
             })
         except Exception as e:
             pass
 
     if data_rows:
         df = pd.DataFrame(data_rows)
-        df = df.sort_values(by=["supplier", "expiry_date"]).reset_index(drop=True)
+        # സോർട്ട് ചെയ്യാൻ താൽക്കാലികമായി NaN ഡേറ്റുകൾ മാറ്റിവെക്കുന്നു
+        df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
         
-        # തീയതികൾ സ്ട്രിംഗ് ഫോർമാറ്റിലേക്ക് മാറ്റുന്നു
-        df['expiry_date'] = df['expiry_date'].dt.strftime('%Y-%m-%d')
-        df['invoice_date'] = df['invoice_date'].dt.strftime('%Y-%m-%d').fillna('')
-        
-        # --- 🚀 SUPABASE AUTO-REPLACE (STABLE VERSION) ---
+        # --- 🚀 SUPABASE AUTO-REPLACE (STABLE NULL-SAFE VERSION) ---
         try:
             records = df.to_dict(orient="records")
             
@@ -202,7 +195,7 @@ if uploaded_file is not None:
             for i in range(0, len(records), chunk_size):
                 supabase.table(TABLE_NAME).insert(records[i:i+chunk_size]).execute()
                 
-            st.success("⚡ Supabase database successfully synced without any syntax/numeric errors!")
+            st.success("⚡ Supabase database successfully updated with safe Date Formatting!")
         except Exception as db_err:
             st.error(f"Failed to auto-upload to Supabase: {db_err}")
             
@@ -213,6 +206,7 @@ if uploaded_file is not None:
             "Packing", "Batch", "Expiry Date", "MRP", 
             "Quantity", "Invoice Date", "Invoice Number"
         ]
+        # CSV ഫയലിൽ യൂസർക്ക് കാണുമ്പോൾ None വാല്യു ബ്ലാങ്ക് സ്‌പേസ് ആയി വരും
         csv_data = csv_df.to_csv(index=False, encoding='utf-8')
         
         # ഫയൽ ഓട്ടോ ഡൗൺലോഡ് ട്രിഗർ ചെയ്യുന്നു
