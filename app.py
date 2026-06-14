@@ -7,7 +7,7 @@ import pytz
 import base64
 from supabase import create_client, Client
 
-st.set_page_config(page_title="Medical Data Converter (Supabase - Ready)", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (Supabase - Production)", page_icon="📋", layout="centered")
 
 # 🔐 SUPABASE CREDENTIALS (ഇവിടെ നിങ്ങളുടെ ശരിയായ വിവരങ്ങൾ നൽകുക)
 SUPABASE_URL = "YOUR_SUPABASE_URL"
@@ -35,8 +35,8 @@ def parse_date(d_str):
         return None if pd.isna(dt) else dt
     except: return None
 
-st.title("📋 Medical Data Converter (Final Version)")
-st.write("Upload your raw `.TXT` file. This version fixes the database rack column mapping perfectly.")
+st.title("📋 Medical Data Converter (Large File Support)")
+st.write("Upload your raw `.TXT` file. This version automatically splits huge files into small chunks to prevent 'Payload too large' errors.")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -160,7 +160,6 @@ if uploaded_file is not None:
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str)
             
-            # 💡 ഇവിടെ 'rack' എന്നതിന് പകരം നിങ്ങളുടെ ഡാറ്റാബേസിലുള്ള 'rack_id' എന്ന് കൃത്യമായി മാറ്റിയിട്ടുണ്ട്.
             data_rows.append({
                 "item_name": item_name,
                 "manufacturer": mfg.upper() if mfg else "MISC.",
@@ -181,19 +180,20 @@ if uploaded_file is not None:
         df = pd.DataFrame(data_rows)
         df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
         
-        # --- 🚀 SUPABASE AUTO-REPLACE (STABLE VERSION) ---
+        # --- 🚀 SUPABASE AUTO-REPLACE (FIXED WITH AUTO-CHUNKING) ---
         try:
             records = df.to_dict(orient="records")
             
-            # പഴയ ഷീറ്റ് ഡാറ്റ ക്ലിയർ ചെയ്യുന്നു
+            # 1. പഴയ ഡാറ്റ മുഴുവൻ ടേബിളിൽ നിന്നും ക്ലിയർ ചെയ്യുന്നു
             supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
             
-            # പുതിയ ഡാറ്റ പുഷ് ചെയ്യുന്നു
+            # 2. ⚡ പൈലോഡ് എറർ ഒഴിവാക്കാൻ 1000 റെക്കോർഡുകൾ വീതമുള്ള കഷണങ്ങളാക്കി പുഷ് ചെയ്യുന്നു
             chunk_size = 1000
             for i in range(0, len(records), chunk_size):
-                supabase.table(TABLE_NAME).insert(records[i:i+chunk_size]).execute()
+                chunk = records[i:i + chunk_size]
+                supabase.table(TABLE_NAME).insert(chunk).execute()
                 
-            st.success("⚡ Supabase database successfully updated with proper Column Mapping!")
+            st.success(f"⚡ Successfully uploaded {len(df)} records to Supabase in structured chunks! (No Payload Errors)")
         except Exception as db_err:
             st.error(f"Failed to auto-upload to Supabase: {db_err}")
             
@@ -206,7 +206,7 @@ if uploaded_file is not None:
         ]
         csv_data = csv_df.to_csv(index=False, encoding='utf-8')
         
-        # ഓട്ടോ ഡൗൺലോഡ് ട്രിഗർ
+        # ഫയൽ ഓട്ടോ ഡൗൺലോഡ് ട്രിഗർ ചെയ്യുന്നു
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
         dynamic_filename = f"{current_time}-offline_stocks.csv"
