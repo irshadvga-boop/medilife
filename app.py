@@ -5,7 +5,7 @@ import io
 import datetime
 import pytz
 
-st.set_page_config(page_title="Medical Data Converter", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (CSV)", page_icon="📋", layout="centered")
 
 def parse_date(d_str):
     try: return pd.to_datetime(d_str, format='%d/%m/%Y')
@@ -19,8 +19,8 @@ def parse_date(d_str):
     try: return pd.to_datetime(d_str, dayfirst=True)
     except: return pd.NaT
 
-st.title("📋 Medical Data Converter")
-st.write("Upload your raw `.TXT` file below to convert it into a formatted Excel sheet.")
+st.title("📋 Medical Data Converter to CSV")
+st.write("Upload your raw `.TXT` file below to convert it into a formatted CSV sheet.")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -29,10 +29,10 @@ if uploaded_file is not None:
     current_supplier = "UNKNOWN SUPPLIER"  
     start_parsing = False
     
-    # 🛠️ THE ULTIMATE STRICT DATE PATTERN
+    # Strict date pattern from your original logic
     date_pattern = r'\b(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}\b|\b(?:0?[1-9]|1[012])/\d{2,4}\b|(?:(?:0?[1-9]|[12][0-9]|3[01])/(?:0?[1-9]|1[012])/\d{2,4}|(?:0?[1-9]|1[012])/\d{2,4})(?=\s)'
     
-    # 🛠️ വലിയൊരു കമ്പനികളുടെ ലിസ്റ്റ് (MICRO GEN ഉൾപ്പെടെ)
+    # List of known manufacturers
     known_mfgs = [
         "MICRO GEN", "DR. REDDY", "DR.REDDY", "BOEHRING", "CHETHANA", "LA RENON", "GLENMARK", "BLUECROS", 
         "MACLEODS", "SYSTOPIC", "BLUECOSS", "DA RENON", "RELIANCE", "ISIS HEA", "CU-CARD", 
@@ -96,7 +96,13 @@ if uploaded_file is not None:
             else:
                 continue
                 
-            if '-' in before_slash:
+            # 🔄 Column Mapping Rules for Item Name & Packing
+            # Hyphen-നു ശേഷം വരുന്ന ഒരൊറ്റ ഡിജിറ്റ് വരെയുള്ള ഭാഗം മാത്രം Item Name ആക്കുന്നു.
+            match_item = re.search(r'^(.*?-\d)', before_slash)
+            if match_item:
+                item_name = match_item.group(1).strip()
+                packing = before_slash[len(item_name):].strip()
+            elif '-' in before_slash:
                 item_name, packing = before_slash.rsplit('-', 1)
                 item_name = item_name.strip()
                 packing = packing.strip()
@@ -180,9 +186,10 @@ if uploaded_file is not None:
                         else:
                             invoice = val if val != '*' else ""
             
+            # Format dates nicely for CSV sorting later (YYYY-MM-DD)
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str) if invoice_date_str else pd.NaT
-                
+            
             try: quantity = int(quantity_str)
             except: quantity = 0
                 
@@ -192,15 +199,15 @@ if uploaded_file is not None:
             data_rows.append({
                 "Item Name": item_name,
                 "Manufacturer": mfg.upper() if mfg else "MISC.",
-                "Supplier": current_supplier,
-                "Rack ID": rack_id if rack_id else "",
-                "Packing": packing,
+                "Supplier": current_supplier.upper(),
+                "Rack": rack_id if rack_id else "-",
+                "Packing": packing if packing else "-",
                 "Batch": batch if batch else "BN",
                 "Expiry Date": expiry_date,
                 "MRP": mrp,
                 "Quantity": quantity,
                 "Invoice Date": invoice_date,
-                "Invoice Number": invoice if invoice else ""
+                "Invoice Number": invoice if invoice else "-"
             })
             
         except Exception as e:
@@ -209,11 +216,12 @@ if uploaded_file is not None:
     if data_rows:
         df = pd.DataFrame(data_rows)
         
+        # Column order exactly as requested
         columns_order = [
             "Item Name", 
             "Manufacturer", 
             "Supplier", 
-            "Rack ID", 
+            "Rack", 
             "Packing", 
             "Batch", 
             "Expiry Date", 
@@ -224,37 +232,28 @@ if uploaded_file is not None:
         ]
         df = df[columns_order]
         
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name="Sheet1")
-            worksheet = writer.sheets["Sheet1"]
-            
-            for col in worksheet.columns:
-                max_len = 0
-                col_letter = col[0].column_letter
-                for cell in col:
-                    if cell.value is not None:
-                        if isinstance(cell.value, (pd.Timestamp, datetime.datetime, datetime.date)):
-                            cell.number_format = 'yyyy-mm-dd'
-                            cell_len = 10
-                        else:
-                            cell_len = len(str(cell.value))
-                        max_len = max(max_len, cell_len)
-                worksheet.column_dimensions[col_letter].width = max(max_len + 5, 12)
-                
-        processed_data = output.getvalue()
+        # Later sort ചെയ്യാൻ എളുപ്പത്തിന് സപ്ലയർ, എക്സ്പെയറി ഡേറ്റ് അനുസരിച്ച് സോർട്ട് ചെയ്യുന്നു
+        df = df.sort_values(by=["Supplier", "Expiry Date"]).reset_index(drop=True)
+        
+        # Date കോളങ്ങൾ വ്യക്തമായ YYYY-MM-DD ഫോർമാറ്റിലേക്ക് മാറ്റുന്നു
+        df['Expiry Date'] = df['Expiry Date'].dt.strftime('%Y-%m-%d')
+        df['Invoice Date'] = df['Invoice Date'].dt.strftime('%Y-%m-%d').fillna('')
+        
+        # 📄 Convert DataFrame to CSV String
+        csv_data = df.to_csv(index=False, encoding='utf-8')
         
         st.success(f"🎉 File processed successfully! Total {len(df)} items found.")
         
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
-        dynamic_filename = f"{current_time}-offline stocks.xlsx"
+        dynamic_filename = f"{current_time}-offline_stocks.csv"
         
+        # Streamlit CSV Download Button
         st.download_button(
-            label="📥 DOWNLOAD EXCEL FILE",
-            data=processed_data,
+            label="📥 DOWNLOAD CSV FILE",
+            data=csv_data,
             file_name=dynamic_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="text/csv"
         )
     else:
         st.error("Could not parse any valid rows. Please check the file format.")
