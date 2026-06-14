@@ -7,9 +7,9 @@ import pytz
 import base64
 from supabase import create_client, Client
 
-st.set_page_config(page_title="Medical Data Converter (Supabase - Production)", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (Supabase - Ready)", page_icon="📋", layout="centered")
 
-# 🔐 SUPABASE CREDENTIALS (ഇവിടെ നിങ്ങളുടെ വിവരങ്ങൾ മാറ്റുക)
+# 🔐 SUPABASE CREDENTIALS (ഇവിടെ നിങ്ങളുടെ ശരിയായ വിവരങ്ങൾ നൽകുക)
 SUPABASE_URL = "YOUR_SUPABASE_URL"
 SUPABASE_KEY = "YOUR_SUPABASE_KEY"
 TABLE_NAME = "expired_stocks" 
@@ -35,8 +35,8 @@ def parse_date(d_str):
         return None if pd.isna(dt) else dt
     except: return None
 
-st.title("📋 Medical Data Converter (Production Stable)")
-st.write("Upload your raw `.TXT` file. This version handles missing invoice dates perfectly for Supabase.")
+st.title("📋 Medical Data Converter (Final Version)")
+st.write("Upload your raw `.TXT` file. This version fixes the database rack column mapping perfectly.")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -108,12 +108,12 @@ if uploaded_file is not None:
                 
             # BULLETPROOF ROW PARSER:
             inv_split = [p.strip() for p in after_slash.split(" - ")]
-            rack_id = "-"
+            rack_val = "-"
             invoice_date_str = ""
             invoice = "-"
             
             if len(inv_split) >= 3:
-                rack_id = inv_split[-1]
+                rack_val = inv_split[-1]
                 invoice_date_str = inv_split[-2]
                 left_over_inv = inv_split[0]
             elif len(inv_split) == 2:
@@ -157,16 +157,15 @@ if uploaded_file is not None:
             if len(qty_mrp_tokens) >= 3:
                 invoice = " ".join(qty_mrp_tokens[2:])
             
-            # ഡേറ്റ് ഒബ്ജക്റ്റുകൾ ജനറേറ്റ് ചെയ്യുന്നു (Invalid ആണെങ്കിൽ None ആകും)
             expiry_date = parse_date(expiry_date_str)
             invoice_date = parse_date(invoice_date_str)
             
-            # Supabase-ലേക്ക് സുരക്ഷിതമായി ഡാറ്റ മാറ്റുന്നു
+            # 💡 ഇവിടെ 'rack' എന്നതിന് പകരം നിങ്ങളുടെ ഡാറ്റാബേസിലുള്ള 'rack_id' എന്ന് കൃത്യമായി മാറ്റിയിട്ടുണ്ട്.
             data_rows.append({
                 "item_name": item_name,
                 "manufacturer": mfg.upper() if mfg else "MISC.",
                 "supplier": current_supplier.upper(),
-                "rack": rack_id if rack_id and rack_id != "" else "-",
+                "rack_id": rack_val if rack_val and rack_val != "" else "-",
                 "packing": packing if packing and packing != "" else "-",
                 "batch": batch if batch and batch != "" else "BN",
                 "expiry_date": expiry_date.strftime('%Y-%m-%d') if expiry_date else None,
@@ -180,36 +179,34 @@ if uploaded_file is not None:
 
     if data_rows:
         df = pd.DataFrame(data_rows)
-        # സോർട്ട് ചെയ്യാൻ താൽക്കാലികമായി NaN ഡേറ്റുകൾ മാറ്റിവെക്കുന്നു
         df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
         
-        # --- 🚀 SUPABASE AUTO-REPLACE (STABLE NULL-SAFE VERSION) ---
+        # --- 🚀 SUPABASE AUTO-REPLACE (STABLE VERSION) ---
         try:
             records = df.to_dict(orient="records")
             
-            # പഴയ ഷീറ്റ് ഡാറ്റ മുഴുവൻ ക്ലിയർ ചെയ്യുന്നു
+            # പഴയ ഷീറ്റ് ഡാറ്റ ക്ലിയർ ചെയ്യുന്നു
             supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
             
-            # പുതിയ ക്ലീൻ ഡാറ്റ പുഷ് ചെയ്യുന്നു
+            # പുതിയ ഡാറ്റ പുഷ് ചെയ്യുന്നു
             chunk_size = 1000
             for i in range(0, len(records), chunk_size):
                 supabase.table(TABLE_NAME).insert(records[i:i+chunk_size]).execute()
                 
-            st.success("⚡ Supabase database successfully updated with safe Date Formatting!")
+            st.success("⚡ Supabase database successfully updated with proper Column Mapping!")
         except Exception as db_err:
             st.error(f"Failed to auto-upload to Supabase: {db_err}")
             
         # --- CSV Generation for Backup Download ---
         csv_df = df.copy()
         csv_df.columns = [
-            "Item Name", "Manufacturer", "Supplier", "Rack", 
+            "Item Name", "Manufacturer", "Supplier", "Rack ID", 
             "Packing", "Batch", "Expiry Date", "MRP", 
             "Quantity", "Invoice Date", "Invoice Number"
         ]
-        # CSV ഫയലിൽ യൂസർക്ക് കാണുമ്പോൾ None വാല്യു ബ്ലാങ്ക് സ്‌പേസ് ആയി വരും
         csv_data = csv_df.to_csv(index=False, encoding='utf-8')
         
-        # ഫയൽ ഓട്ടോ ഡൗൺലോഡ് ട്രിഗർ ചെയ്യുന്നു
+        # ഓട്ടോ ഡൗൺലോഡ് ട്രിഗർ
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
         dynamic_filename = f"{current_time}-offline_stocks.csv"
