@@ -12,10 +12,10 @@ st.set_page_config(page_title="Medical Data Converter (Supabase & GitHub)", page
 
 # 🔐 CREDENTIALS
 SUPABASE_URL = "https://fivchvttdrxywtatqv.supabase.co"
-SUPABASE_KEY = "wvgemyyhgcbtrsaotrsw"  
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 TABLE_NAME = "expired_stocks" 
 
-GITHUB_TOKEN = "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"  
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 GITHUB_REPO = "irshadvga-boop/medilifestk"
 GITHUB_FILE_PATH = "assets/data.csv"
 
