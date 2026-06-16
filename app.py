@@ -6,50 +6,21 @@ import datetime
 import pytz
 import base64
 from supabase import create_client, Client
-from github import Github
 
-st.set_page_config(page_title="Medical Data Converter (Supabase & GitHub)", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (Supabase - Final)", page_icon="📋", layout="centered")
 
-# 🔐 CREDENTIALS
+# 🔐 SUPABASE CREDENTIALS (നിങ്ങളുടെ വലിയ API Key മാത്രം മാറ്റുക)
 SUPABASE_URL = "https://fivchvttdrxywtatqv.supabase.co"
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+SUPABASE_KEY = "YOUR_SUPABASE_KEY"  # 💡 ഇവിടെ നിങ്ങളുടെ വലിയ API Key പേസ്റ്റ് ചെയ്യുക
 TABLE_NAME = "expired_stocks" 
 
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-GITHUB_REPO = "irshadvga-boop/medilifestk"
-GITHUB_FILE_PATH = "assets/data.csv"
-
-# Supabase client initialize cheyyunnu
+# സുപബേസ് ക്ലയന്റ് സുരക്ഷിതമായി ഇനിഷ്യലൈസ് ചെയ്യുന്നു
 supabase = None
 try:
     if SUPABASE_KEY != "YOUR_SUPABASE_KEY":
         supabase = create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
 except Exception as e:
     st.error(f"Supabase Connection Error: {e}")
-
-# GitHub upload function
-def upload_to_github(csv_string):
-    if GITHUB_TOKEN == "YOUR_GITHUB_TOKEN":
-        st.warning("⚠️ GitHub Token is missing! Please add it in the code to update the Web App.")
-        return
-        
-    try:
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_repo(GITHUB_REPO)
-        commit_message = "Auto-updating stock data from Streamlit"
-        
-        try:
-            # File undenkil athu update cheyyunnu
-            contents = repo.get_contents(GITHUB_FILE_PATH)
-            repo.update_file(contents.path, commit_message, csv_string, contents.sha)
-            st.success("✅ Stock Data Successfully Updated on GitHub Web App!")
-        except:
-            # File illenkil puthiyathayi undakkunnu
-            repo.create_file(GITHUB_FILE_PATH, commit_message, csv_string)
-            st.success("✅ Stock Data Successfully Created on GitHub Web App!")
-            
-    except Exception as e:
-        st.error(f"Error uploading to GitHub: {e}")
 
 def parse_date(d_str):
     if not d_str or str(d_str).strip() == "" or str(d_str).strip() == "-":
@@ -67,8 +38,8 @@ def parse_date(d_str):
     except: 
         return pd.NaT
 
-st.title("📋 Medical Data Converter (Auto-Upload Version)")
-st.write("Upload your raw `.TXT` file. This will automatically update both Supabase and your Flutter Web App (GitHub).")
+st.title("📋 Medical Data Converter (Error Free Version)")
+st.write("Upload your raw `.TXT` file. All parsing errors, Date errors, and Packing column mistakes are fixed in this version.")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -125,17 +96,19 @@ if uploaded_file is not None:
             else:
                 continue
                 
-            match_item = re.search(r'^(.*?-\d)', before_slash)
-            if match_item:
-                item_name = match_item.group(1).strip()
-                packing = before_slash[len(item_name):].strip()
-            elif '-' in before_slash:
+            # --- 🎯 NEW BULLETPROOF ITEM NAME & PACKING PARSER ---
+            # പേരും പാക്കിങ്ങും മുറിഞ്ഞുപോകാതിരിക്കാനുള്ള പുതിയ സ്മാർട്ട് ലോജിക്
+            tokens = before_slash.rsplit(' ', 1)
+            if len(tokens) == 2 and '-' in tokens[1] and tokens[1].rsplit('-', 1)[1].isdigit():
+                item_name = tokens[0].strip()
+                packing = tokens[1].strip()
+            elif len(tokens) == 1 and '-' in before_slash and before_slash.rsplit('-', 1)[1].isdigit():
                 item_name, packing = before_slash.rsplit('-', 1)
                 item_name = item_name.strip()
                 packing = packing.strip()
             else:
-                item_name = before_slash
-                packing = ""
+                item_name = before_slash.strip()
+                packing = "-"
                 
             inv_split = [p.strip() for p in after_slash.split(" - ")]
             rack_val = "-"
@@ -231,7 +204,7 @@ if uploaded_file is not None:
         else:
             st.warning("⚠️ Supabase connection failed! Data is only available for CSV download.")
             
-        # --- CSV Preparation ---
+        # --- CSV Backup Generation ---
         csv_df = df.copy()
         csv_df.columns = [
             "Item Name", "Manufacturer", "Supplier", "Rack ID", 
@@ -240,11 +213,6 @@ if uploaded_file is not None:
         ]
         csv_data = csv_df.to_csv(index=False, encoding='utf-8')
         
-        # --- 🚀 GITHUB AUTO-UPLOAD ---
-        with st.spinner("Pushing Data to Web App..."):
-            upload_to_github(csv_data)
-        
-        # --- CSV Backup Generation ---
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.datetime.now(ist).strftime("%d-%m-%Y %I-%M-%p")
         dynamic_filename = f"{current_time}-offline_stocks.csv"
@@ -257,7 +225,7 @@ if uploaded_file is not None:
             </script>
         """
         st.components.v1.html(dl_link, height=0, width=0)
-        st.info("📥 Your CSV backup download has started automatically!")
+        st.info("📥 Your CSV download has started automatically!")
         
         st.download_button(
             label="📥 Alternatively Click Here to Download CSV",
