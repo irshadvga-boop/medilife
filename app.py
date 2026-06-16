@@ -10,7 +10,12 @@ from github import Github
 st.set_page_config(page_title="Medical Data Converter (GitHub Only)", page_icon="📋", layout="centered")
 
 # 🔐 GITHUB CREDENTIALS (Secrets ഉപയോഗിച്ചിരിക്കുന്നു)
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+try:
+    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+except Exception as e:
+    st.error("⚠️ Secrets not found! Please configure GITHUB_TOKEN in Streamlit Cloud Settings.")
+    st.stop()
+    
 GITHUB_REPO = "irshadvga-boop/medilifestk"
 GITHUB_FILE_PATH = "assets/data.csv"
 
@@ -21,7 +26,7 @@ def upload_to_github(csv_string):
         return
         
     try:
-        g = Github(GITHUB_TOKEN)
+        g = Github(GITHUB_TOKEN.strip())
         repo = g.get_repo(GITHUB_REPO)
         commit_message = "Auto-updating stock data from Streamlit"
         
@@ -112,35 +117,18 @@ if uploaded_file is not None:
             else:
                 continue
                 
-            # --- 🎯 SMARTEST ITEM NAME & PACKING PARSER ---
+            # --- 🎯 SIMPLE & PERFECT ITEM NAME & PACKING PARSER ---
+            # അവസാനത്തെ ഹൈഫനിൽ വെച്ച് മാത്രം പേരും പാക്കിങ്ങും വേർതിരിക്കുന്നു
             before_slash = before_slash.strip()
-            item_name = before_slash
-            packing = "-"
-            
-            parts = before_slash.rsplit(' ', 1)
-            if len(parts) == 2:
-                last_word = parts[1]
-                if any(c.isdigit() for c in last_word):
-                    packing_keywords = ['TAB', 'CAP', 'SYP', 'INJ', 'DROP', 'VIAL', 'OINT', 'CREAM', 'GEL', 'PACK', 'KIT', 'PCS', 'GM', 'ML', 'MG', 'KG', 'LTR']
-                    is_pack = False
-                    if any(kw in last_word.upper() for kw in packing_keywords):
-                        is_pack = True
-                    elif '-' in last_word and len(last_word) <= 8:
-                        is_pack = True
-                    elif last_word.endswith("'S"):
-                        is_pack = True
-                        
-                    if is_pack:
-                        item_name = parts[0].strip()
-                        packing = last_word.strip()
-
-            if packing == "-" and '-' in item_name:
-                match = re.search(r'-(\d+[A-Za-z]*)$', item_name)
-                if match:
-                    possible_pack = match.group(1)
-                    if len(possible_pack) <= 6:
-                        item_name = item_name[:match.start()].strip()
-                        packing = possible_pack
+            if '-' in before_slash:
+                parts = before_slash.rsplit('-', 1)
+                item_name = parts[0].strip()
+                packing = parts[1].strip()
+                if not packing:
+                    packing = "-"
+            else:
+                item_name = before_slash
+                packing = "-"
             # ---------------------------------------------------------
                 
             inv_split = [p.strip() for p in after_slash.split(" - ")]
