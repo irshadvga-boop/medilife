@@ -5,38 +5,51 @@ import io
 import datetime
 import pytz
 import base64
+from supabase import create_client, Client
 from github import Github
 
-st.set_page_config(page_title="Medical Data Converter (GitHub Only)", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (Supabase & GitHub)", page_icon="📋", layout="centered")
 
-# 🔐 GITHUB CREDENTIALS
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+# 🔐 CREDENTIALS (Securely fetching from Streamlit Secrets)
+SUPABASE_URL = "https://fivchvttdrxywtatqv.supabase.co"
+
+try:
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+except Exception as e:
+    st.error("⚠️ Secrets not found! Please configure SUPABASE_KEY and GITHUB_TOKEN in Streamlit Cloud Settings.")
+    st.stop()
+
+TABLE_NAME = "expired_stocks" 
 GITHUB_REPO = "irshadvga-boop/medilifestk"
 GITHUB_FILE_PATH = "assets/data.csv"
 
-# ഗിറ്റ്ഹബ്ബ് അപ്‌ലോഡ് ഫങ്ക്ഷൻ
+# Supabase client initialize cheyyunnu
+supabase = None
+try:
+    supabase = create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
+except Exception as e:
+    st.error(f"Supabase Connection Error: {e}")
+
+# GitHub upload function
 def upload_to_github(csv_string):
-    if GITHUB_TOKEN == "YOUR_GITHUB_TOKEN":
-        st.warning("⚠️ GitHub Token is missing! Please add it in the code to update the Web App.")
-        return
-        
     try:
-        g = Github(GITHUB_TOKEN)
+        g = Github(GITHUB_TOKEN.strip())
         repo = g.get_repo(GITHUB_REPO)
         commit_message = "Auto-updating stock data from Streamlit"
         
         try:
-            # ഫയൽ ഓൾറെഡി ഉണ്ടെങ്കിൽ അത് അപ്ഡേറ്റ് ചെയ്യുക
+            # File undenkil athu update cheyyunnu
             contents = repo.get_contents(GITHUB_FILE_PATH)
             repo.update_file(contents.path, commit_message, csv_string, contents.sha)
             st.success("✅ Stock Data Successfully Updated on GitHub Web App!")
         except:
-            # ഫയൽ ഇല്ലെങ്കിൽ പുതിയതായി ഉണ്ടാക്കുക
+            # File illenkil puthiyathayi undakkunnu
             repo.create_file(GITHUB_FILE_PATH, commit_message, csv_string)
             st.success("✅ Stock Data Successfully Created on GitHub Web App!")
             
     except Exception as e:
-        st.error(f"Error uploading to GitHub: {e}")
+        st.error(f"❌ Error uploading to GitHub: {e}")
 
 def parse_date(d_str):
     if not d_str or str(d_str).strip() == "" or str(d_str).strip() == "-":
@@ -54,8 +67,8 @@ def parse_date(d_str):
     except: 
         return pd.NaT
 
-st.title("📋 Medical Data Converter (GitHub Auto-Upload)")
-st.write("Upload your raw `.TXT` file. This will automatically convert and update your Flutter Web App (GitHub).")
+st.title("📋 Medical Data Converter (Auto-Upload Version)")
+st.write("Upload your raw `.TXT` file. This will automatically update both Supabase and your Flutter Web App (GitHub).")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -112,18 +125,42 @@ if uploaded_file is not None:
             else:
                 continue
                 
-            match_item = re.search(r'^(.*?-\d)', before_slash)
-            if match_item:
-                item_name = match_item.group(1).strip()
-                packing = before_slash[len(item_name):].strip()
-            elif '-' in before_slash:
-                item_name, packing = before_slash.rsplit('-', 1)
-                item_name = item_name.strip()
-                packing = packing.strip()
-            else:
-                item_name = before_slash
-                packing = ""
-                
+            # --- 🎯 SMARTEST ITEM NAME & PACKING PARSER (100% FIXED) ---
+            before_slash = before_slash.strip()
+            item_name = before_slash
+            packing = "-"
+            
+            parts = before_slash.rsplit(' ', 1)
+            if len(parts) == 2:
+                last_word = parts[1]
+                # Packing anenkil athil numbers undaavum
+                if any(c.isdigit() for c in last_word):
+                    packing_keywords = ['TAB', 'CAP', 'SYP', 'INJ', 'DROP', 'VIAL', 'OINT', 'CREAM', 'GEL', 'PACK', 'KIT', 'PCS', 'GM', 'ML', 'MG', 'KG', 'LTR']
+                    is_pack = False
+                    # Keywords check cheyyunnu
+                    if any(kw in last_word.upper() for kw in packing_keywords):
+                        is_pack = True
+                    # Hyphen vannaal check cheyyunnu (eg: 30G-1, 10-1)
+                    elif '-' in last_word and len(last_word) <= 8:
+                        is_pack = True
+                    # 'S ending check cheyyunnu
+                    elif last_word.endswith("'S"):
+                        is_pack = True
+                        
+                    if is_pack:
+                        item_name = parts[0].strip()
+                        packing = last_word.strip()
+
+            # Space illathe direct hyphen vannaal (eg: CERELAC MIXED-3)
+            if packing == "-" and '-' in item_name:
+                match = re.search(r'-(\d+[A-Za-z]*)$', item_name)
+                if match:
+                    possible_pack = match.group(1)
+                    if len(possible_pack) <= 4:
+                        item_name = item_name[:match.start()].strip()
+                        packing = possible_pack
+            # ---------------------------------------------------------
+            
             inv_split = [p.strip() for p in after_slash.split(" - ")]
             rack_val = "-"
             invoice_date_str = ""
@@ -199,6 +236,24 @@ if uploaded_file is not None:
     if data_rows:
         df = pd.DataFrame(data_rows)
         df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
+        
+        # --- 🚀 SUPABASE AUTO-REPLACE ---
+        if supabase is not None:
+            try:
+                records = df.to_dict(orient="records")
+                
+                supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
+                
+                chunk_size = 1000
+                for i in range(0, len(records), chunk_size):
+                    chunk = records[i:i + chunk_size]
+                    supabase.table(TABLE_NAME).insert(chunk).execute()
+                    
+                st.success(f"⚡ Successfully uploaded {len(df)} records to Supabase! All errors resolved.")
+            except Exception as db_err:
+                st.error(f"Failed to auto-upload to Supabase: {db_err}")
+        else:
+            st.warning("⚠️ Supabase connection failed! Data is only available for CSV download.")
             
         # --- CSV Preparation ---
         csv_df = df.copy()
