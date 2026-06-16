@@ -5,29 +5,16 @@ import io
 import datetime
 import pytz
 import base64
-from supabase import create_client, Client
 from github import Github
 
-st.set_page_config(page_title="Medical Data Converter (Supabase & GitHub)", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Medical Data Converter (GitHub Only)", page_icon="📋", layout="centered")
 
-# 🔐 CREDENTIALS
-SUPABASE_URL = "https://fivchvttdrxywtatqv.supabase.co"
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-TABLE_NAME = "expired_stocks" 
-
+# 🔐 GITHUB CREDENTIALS
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 GITHUB_REPO = "irshadvga-boop/medilifestk"
 GITHUB_FILE_PATH = "assets/data.csv"
 
-# Supabase client initialize cheyyunnu
-supabase = None
-try:
-    if SUPABASE_KEY != "YOUR_SUPABASE_KEY":
-        supabase = create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
-except Exception as e:
-    st.error(f"Supabase Connection Error: {e}")
-
-# GitHub upload function
+# ഗിറ്റ്ഹബ്ബ് അപ്‌ലോഡ് ഫങ്ക്ഷൻ
 def upload_to_github(csv_string):
     if GITHUB_TOKEN == "YOUR_GITHUB_TOKEN":
         st.warning("⚠️ GitHub Token is missing! Please add it in the code to update the Web App.")
@@ -39,12 +26,12 @@ def upload_to_github(csv_string):
         commit_message = "Auto-updating stock data from Streamlit"
         
         try:
-            # File undenkil athu update cheyyunnu
+            # ഫയൽ ഓൾറെഡി ഉണ്ടെങ്കിൽ അത് അപ്ഡേറ്റ് ചെയ്യുക
             contents = repo.get_contents(GITHUB_FILE_PATH)
             repo.update_file(contents.path, commit_message, csv_string, contents.sha)
             st.success("✅ Stock Data Successfully Updated on GitHub Web App!")
         except:
-            # File illenkil puthiyathayi undakkunnu
+            # ഫയൽ ഇല്ലെങ്കിൽ പുതിയതായി ഉണ്ടാക്കുക
             repo.create_file(GITHUB_FILE_PATH, commit_message, csv_string)
             st.success("✅ Stock Data Successfully Created on GitHub Web App!")
             
@@ -67,8 +54,8 @@ def parse_date(d_str):
     except: 
         return pd.NaT
 
-st.title("📋 Medical Data Converter (Auto-Upload Version)")
-st.write("Upload your raw `.TXT` file. This will automatically update both Supabase and your Flutter Web App (GitHub).")
+st.title("📋 Medical Data Converter (GitHub Auto-Upload)")
+st.write("Upload your raw `.TXT` file. This will automatically convert and update your Flutter Web App (GitHub).")
 
 uploaded_file = st.file_uploader("Choose a TXT file", type=["txt", "TXT"])
 
@@ -212,24 +199,6 @@ if uploaded_file is not None:
     if data_rows:
         df = pd.DataFrame(data_rows)
         df = df.sort_values(by=["supplier", "expiry_date"], na_position='last').reset_index(drop=True)
-        
-        # --- 🚀 SUPABASE AUTO-REPLACE ---
-        if supabase is not None:
-            try:
-                records = df.to_dict(orient="records")
-                
-                supabase.table(TABLE_NAME).delete().gt("quantity", -1).execute()
-                
-                chunk_size = 1000
-                for i in range(0, len(records), chunk_size):
-                    chunk = records[i:i + chunk_size]
-                    supabase.table(TABLE_NAME).insert(chunk).execute()
-                    
-                st.success(f"⚡ Successfully uploaded {len(df)} records to Supabase! All errors resolved.")
-            except Exception as db_err:
-                st.error(f"Failed to auto-upload to Supabase: {db_err}")
-        else:
-            st.warning("⚠️ Supabase connection failed! Data is only available for CSV download.")
             
         # --- CSV Preparation ---
         csv_df = df.copy()
